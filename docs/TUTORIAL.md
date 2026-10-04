@@ -39,6 +39,8 @@ Criar conta  ──►  Login (recebe um token)  ──►  Usar as tarefas com 
 
 O **token** é a sua "chave de acesso": todas as rotas de tarefas exigem que ele seja enviado no header `Authorization: Bearer <token>`.
 
+As tarefas são **compartilhadas** entre todos os usuários: depois de logado, você vê e pode alterar qualquer tarefa, inclusive as criadas por outras pessoas. Os diagramas dessa regra estão em [Regras de negócio](REGRAS-DE-NEGOCIO.md).
+
 ---
 
 ## 2. Subir o ambiente

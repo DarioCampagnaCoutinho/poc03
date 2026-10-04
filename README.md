@@ -115,6 +115,7 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   └── task/
 │       └── task.postman_collection.json
 ├── docs/
+│   ├── REGRAS-DE-NEGOCIO.md            # Regras de negócio com diagramas
 │   └── TUTORIAL.md                     # Tutorial de uso da API
 ├── docker/
 │   ├── nginx/
@@ -292,6 +293,8 @@ curl -X POST -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" htt
 ### Tarefas (`/api/tasks`)
 
 Todas as rotas de tarefas exigem o header `Authorization: Bearer <token>` (veja [Autenticação](#autenticação-apiauth)). Envie também `Accept: application/json` para receber erros de validação em JSON.
+
+**Regra de negócio:** as tarefas são **compartilhadas**. Basta estar logado para ver, criar, alterar, excluir e restaurar qualquer tarefa, inclusive as criadas por outros usuários. As tarefas não têm dono. Veja os diagramas em [Regras de negócio](docs/REGRAS-DE-NEGOCIO.md).
 
 **Formato de uma tarefa**
 
@@ -557,7 +560,6 @@ docker compose exec app bash
 
 ### Pendências conhecidas
 
-- As tarefas ainda não pertencem a um usuário: qualquer usuário autenticado vê e altera todas as tarefas.
 - Os tokens não expiram (`expiration` = `null` em `config/sanctum.php`, padrão do Sanctum); só deixam de valer no logout.
 - A fila usa o driver `database`, mas ainda não há um container de worker (`queue:work`).
 - As mensagens de validação estão em inglês (`APP_LOCALE=en`).
