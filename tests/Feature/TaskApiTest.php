@@ -4,12 +4,45 @@ namespace Tests\Feature;
 
 use App\Enums\TaskStatus;
 use App\Models\Task;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class TaskApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Sanctum::actingAs(User::factory()->create());
+    }
+
+    #[DataProvider('taskRoutes')]
+    public function test_routes_require_authentication(string $method, string $uri): void
+    {
+        $this->app['auth']->forgetGuards();
+
+        $this->json($method, $uri)->assertUnauthorized();
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function taskRoutes(): array
+    {
+        return [
+            'listar' => ['GET', '/api/tasks'],
+            'criar' => ['POST', '/api/tasks'],
+            'exibir' => ['GET', '/api/tasks/1'],
+            'atualizar' => ['PATCH', '/api/tasks/1'],
+            'excluir' => ['DELETE', '/api/tasks/1'],
+            'restaurar' => ['POST', '/api/tasks/1/restore'],
+        ];
+    }
 
     public function test_index_lists_active_tasks_paginated(): void
     {

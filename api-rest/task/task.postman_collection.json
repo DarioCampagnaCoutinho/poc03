@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "POC 03 - Task",
-    "description": "CRUD de tarefas da POC 03 (Laravel 13).\n\nVariáveis da coleção:\n- `base_url`: endereço da API (padrão `http://localhost:8000`)\n- `task_id`: preenchida automaticamente pela requisição \"Criar tarefa\"\n\nAs requisições estão na ordem de um fluxo completo e podem ser executadas em sequência pelo Collection Runner.",
+    "description": "CRUD de tarefas da POC 03 (Laravel 13).\n\n**Autenticação:** todas as rotas exigem `Authorization: Bearer {{token}}`. Antes de usar esta coleção, execute \"Login\" ou \"Registrar usuário\" na coleção **POC 03 - Auth**: o token fica salvo na variável global `token`.\n\nVariáveis da coleção:\n- `base_url`: endereço da API (padrão `http://localhost:8000`)\n- `task_id`: preenchida automaticamente pela requisição \"Criar tarefa\"\n\nAs requisições estão na ordem de um fluxo completo e podem ser executadas em sequência pelo Collection Runner.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -482,8 +482,57 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Listar tarefas sem token (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+              "pm.test('Mensagem Unauthenticated', () => pm.expect(pm.response.json().message).to.eql('Unauthenticated.'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks"
+          ]
+        },
+        "description": "Exemplo de requisição sem o header `Authorization`: todas as rotas de tarefas exigem um token.",
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "response": []
     }
   ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
   "variable": [
     {
       "key": "base_url",

@@ -13,7 +13,7 @@ O projeto está sendo construído por etapas; o histórico do que já foi entreg
 | Laravel Framework | 13.34.0 | Restrição no `composer.json`: `^13.17` |
 | Symfony (componentes) | 7.4 | Resolvido para manter compatibilidade com PHP 8.3 |
 | PostgreSQL | 18.6 | Imagem `postgres:18-alpine` |
-| Laravel Sanctum | 4.3.3 | Autenticação de API (instalado, ainda não utilizado) |
+| Laravel Sanctum | 4.3.3 | Autenticação da API por token (`Authorization: Bearer`) |
 | Composer | 2.10.3 | Copiado da imagem `composer:2` |
 | Nginx | 1.31.6 | Imagem `nginx:alpine` |
 | PHPUnit | 12.5.37 | Testes |
@@ -106,6 +106,8 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 ├── compose.yaml                        # Serviços app, nginx e postgres
 ├── .dockerignore
 ├── api-rest/                           # Coleções do Postman
+│   ├── auth/
+│   │   └── auth.postman_collection.json
 │   ├── health/
 │   │   └── health.postman_collection.json
 │   └── task/
@@ -121,16 +123,21 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   │   └── TaskStatus.php              # Enum de status da tarefa
 │   ├── Http/
 │   │   ├── Controllers/Api/
+│   │   │   ├── AuthController.php          # Cadastro, login, logout e usuário autenticado
 │   │   │   ├── HelloWorldController.php    # GET /api/hello
 │   │   │   ├── HealthCheckController.php   # GET /api/health e /api/health/{service}
 │   │   │   └── TaskController.php          # CRUD /api/tasks + restore
 │   │   ├── Requests/
-│   │   │   ├── StoreTaskRequest.php        # Validação da criação
-│   │   │   └── UpdateTaskRequest.php       # Validação da atualização
+│   │   │   ├── LoginRequest.php            # Validação do login
+│   │   │   ├── RegisterRequest.php         # Validação do cadastro
+│   │   │   ├── StoreTaskRequest.php        # Validação da criação de tarefa
+│   │   │   └── UpdateTaskRequest.php       # Validação da atualização de tarefa
 │   │   └── Resources/
-│   │       └── TaskResource.php            # Formato JSON da tarefa
+│   │       ├── TaskResource.php            # Formato JSON da tarefa
+│   │       └── UserResource.php            # Formato JSON do usuário
 │   ├── Models/
-│   │   └── Task.php                    # Model Task (soft delete + sincronização de status)
+│   │   ├── Task.php                    # Model Task (soft delete + sincronização de status)
+│   │   └── User.php                    # Model User (HasApiTokens do Sanctum)
 │   └── Services/
 │       └── HealthCheckService.php      # Lógica de verificação de cada serviço
 ├── database/
@@ -139,6 +146,7 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 ├── routes/
 │   └── api.php                         # Rotas da API (prefixo /api)
 └── tests/Feature/
+    ├── AuthApiTest.php                 # Testes das rotas de autenticação
     ├── HealthCheckTest.php             # Testes das rotas de health check
     ├── TaskApiTest.php                 # Testes das rotas de tarefas
     └── TaskTest.php                    # Testes do model Task
@@ -172,6 +180,9 @@ docker compose exec app php artisan key:generate
 
 # 5. Migrations no PostgreSQL
 docker compose exec app php artisan migrate
+
+# 6. (Opcional) Usuário de teste: test@example.com / password
+docker compose exec app php artisan db:seed
 ```
 
 A API fica disponível em **http://localhost:8000**. Para conferir se tudo subiu: `curl http://localhost:8000/api/health`.
@@ -194,24 +205,97 @@ Todas as rotas da API ficam sob o prefixo `/api`.
 | Método | Rota | Descrição | Autenticação |
 |---|---|---|---|
 | `GET` | `/api/hello` | Retorna uma mensagem de Hello World | Não |
-| `GET` | `/api/tasks` | Lista as tarefas (paginado, filtro por status) | Não |
-| `POST` | `/api/tasks` | Cria uma tarefa | Não |
-| `GET` | `/api/tasks/{id}` | Exibe uma tarefa | Não |
-| `PUT/PATCH` | `/api/tasks/{id}` | Atualiza uma tarefa | Não |
-| `DELETE` | `/api/tasks/{id}` | Exclui uma tarefa (soft delete) | Não |
-| `POST` | `/api/tasks/{id}/restore` | Restaura uma tarefa excluída | Não |
+| `POST` | `/api/auth/register` | Cadastra um usuário e retorna um token | Não |
+| `POST` | `/api/auth/login` | Troca e-mail e senha por um token | Não |
+| `GET` | `/api/auth/me` | Retorna o usuário autenticado | Token |
+| `POST` | `/api/auth/logout` | Revoga o token usado na requisição | Token |
+| `GET` | `/api/tasks` | Lista as tarefas (paginado, filtro por status) | Token |
+| `POST` | `/api/tasks` | Cria uma tarefa | Token |
+| `GET` | `/api/tasks/{id}` | Exibe uma tarefa | Token |
+| `PUT/PATCH` | `/api/tasks/{id}` | Atualiza uma tarefa | Token |
+| `DELETE` | `/api/tasks/{id}` | Exclui uma tarefa (soft delete) | Token |
+| `POST` | `/api/tasks/{id}/restore` | Restaura uma tarefa excluída | Token |
 | `GET` | `/api/health` | Status de todos os serviços | Não |
 | `GET` | `/api/health/app` | PHP-FPM / Laravel: versões e ambiente | Não |
 | `GET` | `/api/health/webserver` | Nginx: requisição do app ao endpoint `/nginx-health` | Não |
 | `GET` | `/api/health/database` | PostgreSQL: conexão, query de teste e versão | Não |
 | `GET` | `/api/health/cache` | Cache: grava, lê e remove uma chave (store `database`) | Não |
-| `GET` | `/api/user` | Retorna o usuário autenticado (rota padrão do Sanctum) | `auth:sanctum` |
 | `GET` | `/up` | Health check padrão do Laravel | Não |
 | `GET` | `/nginx-health` | Health check do Nginx (não passa pelo PHP) | Não |
 
+"Token" = header `Authorization: Bearer <token>`, obtido no cadastro ou no login. Sem token (ou com um token revogado), a API responde `401 {"message": "Unauthenticated."}`.
+
+### Autenticação (`/api/auth`)
+
+A autenticação usa os **tokens de API do Laravel Sanctum**: o cliente troca e-mail e senha por um token e o envia em todas as requisições protegidas.
+
+**Fluxo**
+
+1. `POST /api/auth/register` (cadastro) ou `POST /api/auth/login` → resposta com o `token`.
+2. Enviar `Authorization: Bearer <token>` nas rotas protegidas.
+3. `POST /api/auth/logout` → revoga aquele token (os outros tokens do usuário continuam válidos).
+
+**Campos aceitos**
+
+| Rota | Campo | Regras |
+|---|---|---|
+| `register` | `name` | Obrigatório, até 255 caracteres |
+| `register` | `email` | Obrigatório, e-mail válido, minúsculo e único |
+| `register` | `password` / `password_confirmation` | Obrigatórios, mínimo de 8 caracteres e iguais |
+| `login` | `email` / `password` | Obrigatórios |
+| `register` e `login` | `device_name` | Opcional (padrão `api`). Nome que identifica o token, ex.: "iPhone da Maria" |
+
+**Resposta do cadastro (`201`) e do login (`200`)**
+
+```json
+{
+  "data": {
+    "id": 1,
+    "name": "Maria",
+    "email": "maria@example.com",
+    "email_verified_at": null,
+    "created_at": "2026-10-04T15:20:11.000000Z",
+    "updated_at": "2026-10-04T15:20:11.000000Z"
+  },
+  "token": "1|Xq3m...",
+  "token_type": "Bearer"
+}
+```
+
+O token só é exibido nesse momento; no banco (`personal_access_tokens`) fica apenas o hash SHA-256.
+
+**Respostas de erro**
+
+| Situação | HTTP |
+|---|---|
+| Dados inválidos ou e-mail já cadastrado | `422 Unprocessable Content` |
+| E-mail ou senha incorretos (erro no campo `email`, como na documentação do Sanctum) | `422 Unprocessable Content` |
+| Sem token, token inválido ou revogado | `401 Unauthorized` |
+| Mais de 10 tentativas de cadastro/login por minuto no mesmo IP | `429 Too Many Requests` |
+
+**Exemplos**
+
+```bash
+# Cadastrar
+curl -X POST http://localhost:8000/api/auth/register \
+  -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -d '{"name": "Maria", "email": "maria@example.com", "password": "password", "password_confirmation": "password"}'
+
+# Login (guarda o token em uma variável do shell)
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -d '{"email": "maria@example.com", "password": "password"}' | python3 -c 'import sys, json; print(json.load(sys.stdin)["token"])')
+
+# Usuário autenticado
+curl -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/auth/me
+
+# Logout
+curl -X POST -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/auth/logout
+```
+
 ### Tarefas (`/api/tasks`)
 
-Envie sempre o header `Accept: application/json` para receber erros de validação em JSON.
+Todas as rotas de tarefas exigem o header `Authorization: Bearer <token>` (veja [Autenticação](#autenticação-apiauth)). Envie também `Accept: application/json` para receber erros de validação em JSON.
 
 **Formato de uma tarefa**
 
@@ -257,28 +341,29 @@ Sem filtro, a listagem traz só as tarefas ativas, da mais recente para a mais a
 | Tarefa criada | `201 Created` |
 | Consulta, atualização ou restauração | `200 OK` |
 | Exclusão | `204 No Content` |
+| Sem token, token inválido ou revogado | `401 Unauthorized` |
 | Tarefa inexistente ou excluída (em `GET`, `PUT/PATCH` e `DELETE`) | `404 Not Found` |
 | Dados inválidos | `422 Unprocessable Content` |
 
-**Exemplos**
+**Exemplos** (com `$TOKEN` obtido no [login](#autenticação-apiauth))
 
 ```bash
 # Criar
 curl -X POST http://localhost:8000/api/tasks \
-  -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"title": "Estudar Laravel", "description": "Ler a documentação de Eloquent"}'
 
 # Listar as tarefas em andamento
-curl -H 'Accept: application/json' 'http://localhost:8000/api/tasks?status=in_progress'
+curl -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" 'http://localhost:8000/api/tasks?status=in_progress'
 
 # Mudar o status
 curl -X PATCH http://localhost:8000/api/tasks/1 \
-  -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"status": "completed"}'
 
 # Excluir e restaurar
-curl -X DELETE -H 'Accept: application/json' http://localhost:8000/api/tasks/1
-curl -X POST   -H 'Accept: application/json' http://localhost:8000/api/tasks/1/restore
+curl -X DELETE -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/tasks/1
+curl -X POST   -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/tasks/1/restore
 ```
 
 ### Health check
@@ -339,26 +424,37 @@ A pasta [`api-rest/`](api-rest/) traz as coleções prontas para importar no Pos
 
 | Coleção | Arquivo | Requisições |
 |---|---|---|
+| POC 03 - Auth | `api-rest/auth/auth.postman_collection.json` | Cadastro, usuário autenticado, logout, login e exemplos de erro (401 e 422) |
 | POC 03 - Health | `api-rest/health/health.postman_collection.json` | Health check de todos os serviços, `/up` e `/nginx-health` |
-| POC 03 - Task | `api-rest/task/task.postman_collection.json` | CRUD completo de tarefas, lixeira, restauração e um exemplo de erro 422 |
+| POC 03 - Task | `api-rest/task/task.postman_collection.json` | CRUD completo de tarefas, lixeira, restauração e exemplos de erro (401 e 422) |
 
-**Importar:** no Postman, clique em **Import** e arraste a pasta `api-rest` (ou os dois arquivos `.json`).
+**Importar:** no Postman, clique em **Import** e arraste a pasta `api-rest` (ou os três arquivos `.json`).
 
-**Variáveis** (aba *Variables* de cada coleção):
+**Autenticação no Postman:** execute **"Registrar usuário"** ou **"Login"** da coleção *POC 03 - Auth* antes de usar a coleção *POC 03 - Task*. O token retornado é salvo na variável **global** `token` (visível em *Environments → Globals*) e enviado automaticamente como `Authorization: Bearer {{token}}` pelas coleções Auth e Task.
 
-| Variável | Padrão | Uso |
-|---|---|---|
-| `base_url` | `http://localhost:8000` | Endereço da API |
-| `task_id` | `1` | Preenchida automaticamente pela requisição "Criar tarefa" |
+**Variáveis**
 
-As requisições da coleção Task estão na ordem de um fluxo completo (criar → listar → exibir → atualizar → excluir → listar lixeira → restaurar) e todas têm testes. Dá para executar tudo de uma vez pelo **Collection Runner** ou pelo Newman, sem instalar nada além do Docker:
+| Variável | Onde | Padrão | Uso |
+|---|---|---|---|
+| `token` | Global | — | Preenchida por "Registrar usuário" e "Login" |
+| `base_url` | Cada coleção | `http://localhost:8000` | Endereço da API |
+| `email` | Auth | `test@example.com` | Substituída por um e-mail único a cada "Registrar usuário" |
+| `password` | Auth | `password` | Senha usada no cadastro e no login |
+| `task_id` | Task | `1` | Preenchida automaticamente pela requisição "Criar tarefa" |
+
+Para fazer login com o usuário de teste (`test@example.com`), rode antes `docker compose exec app php artisan db:seed`.
+
+As requisições de cada coleção estão na ordem de um fluxo completo e todas têm testes. Dá para executar tudo de uma vez pelo **Collection Runner** ou pelo Newman, sem instalar nada além do Docker. Como o Newman roda cada coleção separadamente, o token é passado de uma execução para a outra por um arquivo de variáveis globais:
 
 ```bash
-docker run --rm --network poc03_default -v "$PWD/api-rest":/etc/newman postman/newman \
-  run task/task.postman_collection.json --env-var base_url=http://nginx
+newman() { docker run --rm --network poc03_default -v "$PWD/api-rest":/etc/newman postman/newman run "$@" --env-var base_url=http://nginx; }
+
+newman auth/auth.postman_collection.json --export-globals globals.json
+newman task/task.postman_collection.json --globals globals.json
+rm api-rest/globals.json
 ```
 
-> Executar a coleção Task cria uma tarefa no banco de desenvolvimento.
+> Executar as coleções Auth e Task cria um usuário e uma tarefa no banco de desenvolvimento.
 
 ---
 
@@ -439,11 +535,24 @@ docker compose exec app bash
 - [x] Testes em todas as requisições, executáveis pelo Collection Runner
 - [x] Coleções validadas com o Newman contra a API rodando
 
+### Etapa 6 — Autenticação com Sanctum ✅
+
+- [x] Trait `HasApiTokens` no model `User`
+- [x] `AuthController` com cadastro, login, usuário autenticado e logout (`/api/auth/*`)
+- [x] Validação com `RegisterRequest` e `LoginRequest`; credenciais inválidas retornam 422, como na documentação do Sanctum
+- [x] `UserResource` padronizando o JSON do usuário; o token vai junto na resposta de cadastro e login
+- [x] Rotas de tarefas protegidas com `auth:sanctum`; health check e hello continuam públicos
+- [x] Rota padrão `GET /api/user` substituída por `GET /api/auth/me`
+- [x] Rate limit de 10 tentativas por minuto por IP no cadastro e no login
+- [x] Correção: rotas `api/*` sem token respondem 401 mesmo sem o header `Accept: application/json` (antes: erro 500 "Route [login] not defined")
+- [x] Testes de autenticação (`tests/Feature/AuthApiTest.php`) e `TaskApiTest` autenticando com `Sanctum::actingAs`
+- [x] Coleção do Postman `auth` e coleção `task` com autenticação Bearer, validadas com o Newman
+
 ### Pendências conhecidas
 
-- Adicionar o trait `Laravel\Sanctum\HasApiTokens` ao model `User` quando a autenticação for implementada.
+- As tarefas ainda não pertencem a um usuário: qualquer usuário autenticado vê e altera todas as tarefas.
+- Os tokens não expiram (`expiration` = `null` em `config/sanctum.php`, padrão do Sanctum); só deixam de valer no logout.
 - A fila usa o driver `database`, mas ainda não há um container de worker (`queue:work`).
-- As rotas de tarefas ainda são públicas; a autenticação (Sanctum) será aplicada em uma próxima etapa.
 - As mensagens de validação estão em inglês (`APP_LOCALE=en`).
 
 ---
@@ -457,6 +566,9 @@ docker compose exec app bash
 - **Credenciais em um só lugar:** o `compose.yaml` lê `DB_DATABASE`, `DB_USERNAME` e `DB_PASSWORD` do `.env` do Laravel para configurar o Postgres.
 - **Testes em PostgreSQL:** os testes rodam no mesmo banco usado em produção (banco `testing`), evitando diferenças de comportamento entre SQLite e PostgreSQL. O script de `docker/postgres/init/` só roda na primeira inicialização do volume; se o volume já existir sem esse banco, crie-o com `docker compose exec postgres createdb -U poc03 testing`.
 - **Health check do Nginx sem PHP:** o app chama `/nginx-health`, respondido diretamente pelo Nginx, para testar o servidor web sem gerar uma requisição recursiva ao PHP-FPM.
+- **Tokens de API em vez de autenticação por cookie (SPA):** a API é consumida por clientes externos (Postman, apps), então foi usado o fluxo de tokens do Sanctum, como na seção *Mobile Application Authentication* da documentação. O modo SPA (cookies + CSRF) não foi habilitado.
+- **Visitantes sem redirecionamento:** por padrão o Laravel redireciona usuários não autenticados para a rota `login`, que não existe nesta API. Em `bootstrap/app.php`, `redirectGuestsTo` foi configurado para que rotas `api/*` sempre respondam 401.
+- **Token global no Postman:** o token é salvo como variável global para ser compartilhado entre as coleções Auth e Task sem exigir a seleção de um ambiente.
 
 ---
 
