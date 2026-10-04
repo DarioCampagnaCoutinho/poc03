@@ -3,6 +3,8 @@
 Prova de conceito de uma API REST em **Laravel 13**, rodando em **PHP 8.3** com **PostgreSQL 18** em containers Docker (PHP-FPM + Nginx + PostgreSQL).
 O projeto está sendo construído por etapas; o histórico do que já foi entregue está em [Status do projeto](#status-do-projeto).
 
+> **Primeira vez usando a API?** Siga o [tutorial passo a passo](docs/TUTORIAL.md): subir o ambiente, criar uma conta, fazer login e gerenciar tarefas pelo terminal ou pelo Postman.
+
 ---
 
 ## Tecnologias e versões
@@ -112,6 +114,8 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   │   └── health.postman_collection.json
 │   └── task/
 │       └── task.postman_collection.json
+├── docs/
+│   └── TUTORIAL.md                     # Tutorial de uso da API
 ├── docker/
 │   ├── nginx/
 │   │   └── default.conf                # Virtual host do Nginx + endpoint /nginx-health
@@ -545,6 +549,11 @@ docker compose exec app bash
 ### Etapa 8 — Remoção do Hello World ✅
 
 - [x] Removidos o `HelloWorldController` e a rota `GET /api/hello`, criados na Etapa 1 apenas para validar a estrutura
+
+### Etapa 9 — Tutorial de uso ✅
+
+- [x] `docs/TUTORIAL.md`: passo a passo do ambiente ao ciclo completo de uma tarefa, pelo terminal (`curl`) e pelo Postman, com solução de problemas comuns
+- [x] Comandos do tutorial validados contra a API rodando, no zsh
 
 ### Pendências conhecidas
 
