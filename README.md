@@ -105,6 +105,11 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 ├── Dockerfile                          # Imagem PHP 8.3-FPM + extensões + Composer
 ├── compose.yaml                        # Serviços app, nginx e postgres
 ├── .dockerignore
+├── api-rest/                           # Coleções do Postman
+│   ├── health/
+│   │   └── health.postman_collection.json
+│   └── task/
+│       └── task.postman_collection.json
 ├── docker/
 │   ├── nginx/
 │   │   └── default.conf                # Virtual host do Nginx + endpoint /nginx-health
@@ -328,6 +333,35 @@ Erros em rotas `/api/*` são sempre devolvidos em JSON (configurado em `bootstra
 
 ---
 
+## Postman
+
+A pasta [`api-rest/`](api-rest/) traz as coleções prontas para importar no Postman (formato Collection v2.1):
+
+| Coleção | Arquivo | Requisições |
+|---|---|---|
+| POC 03 - Health | `api-rest/health/health.postman_collection.json` | Health check de todos os serviços, `/up` e `/nginx-health` |
+| POC 03 - Task | `api-rest/task/task.postman_collection.json` | CRUD completo de tarefas, lixeira, restauração e um exemplo de erro 422 |
+
+**Importar:** no Postman, clique em **Import** e arraste a pasta `api-rest` (ou os dois arquivos `.json`).
+
+**Variáveis** (aba *Variables* de cada coleção):
+
+| Variável | Padrão | Uso |
+|---|---|---|
+| `base_url` | `http://localhost:8000` | Endereço da API |
+| `task_id` | `1` | Preenchida automaticamente pela requisição "Criar tarefa" |
+
+As requisições da coleção Task estão na ordem de um fluxo completo (criar → listar → exibir → atualizar → excluir → listar lixeira → restaurar) e todas têm testes. Dá para executar tudo de uma vez pelo **Collection Runner** ou pelo Newman, sem instalar nada além do Docker:
+
+```bash
+docker run --rm --network poc03_default -v "$PWD/api-rest":/etc/newman postman/newman \
+  run task/task.postman_collection.json --env-var base_url=http://nginx
+```
+
+> Executar a coleção Task cria uma tarefa no banco de desenvolvimento.
+
+---
+
 ## Comandos úteis
 
 ```bash
@@ -397,6 +431,13 @@ docker compose exec app bash
 - [x] Parâmetro `{id}` restrito a números (ex.: `/api/tasks/abc` retorna 404, e não erro do PostgreSQL)
 - [x] Correção no model: `restore()` em tarefa ativa não altera mais o status
 - [x] Testes da API (`tests/Feature/TaskApiTest.php`) e teste de ponta a ponta via `curl`
+
+### Etapa 5 — Coleções do Postman ✅
+
+- [x] Pasta `api-rest/` com as coleções `health` (7 requisições) e `task` (10 requisições)
+- [x] Variáveis `base_url` e `task_id` (preenchida automaticamente ao criar uma tarefa)
+- [x] Testes em todas as requisições, executáveis pelo Collection Runner
+- [x] Coleções validadas com o Newman contra a API rodando
 
 ### Pendências conhecidas
 

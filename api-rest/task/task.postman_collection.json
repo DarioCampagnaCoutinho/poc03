@@ -1,0 +1,499 @@
+{
+  "info": {
+    "name": "POC 03 - Task",
+    "description": "CRUD de tarefas da POC 03 (Laravel 13).\n\nVariáveis da coleção:\n- `base_url`: endereço da API (padrão `http://localhost:8000`)\n- `task_id`: preenchida automaticamente pela requisição \"Criar tarefa\"\n\nAs requisições estão na ordem de um fluxo completo e podem ser executadas em sequência pelo Collection Runner.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Criar tarefa",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "",
+              "if (pm.response.code === 201) {",
+              "    const task = pm.response.json().data;",
+              "    pm.test('Tarefa criada como pendente', () => pm.expect(task.status).to.eql('pending'));",
+              "",
+              "    // Guarda o id para as próximas requisições",
+              "    pm.collectionVariables.set('task_id', task.id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks"
+          ]
+        },
+        "description": "Cria uma tarefa. `title` é obrigatório; `description` e `status` são opcionais (padrão `pending`).\n\nGuarda o `id` retornado na variável `task_id`, usada pelas próximas requisições.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Estudar Laravel\",\n  \"description\": \"Ler a documentação de Eloquent\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Listar tarefas",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Retorna lista paginada', () => {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json.data).to.be.an('array');",
+              "    pm.expect(json).to.have.property('meta');",
+              "    pm.expect(json).to.have.property('links');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks?per_page=15&page=1",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks"
+          ],
+          "query": [
+            {
+              "key": "status",
+              "value": "pending",
+              "description": "pending, in_progress, completed, cancelled ou deleted",
+              "disabled": true
+            },
+            {
+              "key": "per_page",
+              "value": "15",
+              "description": "Itens por página (1 a 100)"
+            },
+            {
+              "key": "page",
+              "value": "1",
+              "description": "Página"
+            }
+          ]
+        },
+        "description": "Lista as tarefas ativas, paginadas, da mais recente para a mais antiga.\n\nParâmetros opcionais: `status` (pending, in_progress, completed, cancelled ou deleted), `per_page` (1 a 100, padrão 15) e `page`."
+      },
+      "response": []
+    },
+    {
+      "name": "Listar tarefas por status",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Todas as tarefas têm o status filtrado', () => {",
+              "    const expected = pm.request.url.query.get('status');",
+              "    pm.response.json().data.forEach(task => pm.expect(task.status).to.eql(expected));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks?status=pending",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks"
+          ],
+          "query": [
+            {
+              "key": "status",
+              "value": "pending",
+              "description": "pending, in_progress, completed, cancelled ou deleted"
+            }
+          ]
+        },
+        "description": "Filtra as tarefas por status."
+      },
+      "response": []
+    },
+    {
+      "name": "Exibir tarefa",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Retorna a tarefa solicitada', () => {",
+              "    pm.expect(String(pm.response.json().data.id)).to.eql(String(pm.collectionVariables.get('task_id')));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks/{{task_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks",
+            "{{task_id}}"
+          ]
+        },
+        "description": "Exibe uma tarefa. Retorna 404 se ela não existir ou estiver excluída."
+      },
+      "response": []
+    },
+    {
+      "name": "Atualizar tarefa (PATCH)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Status alterado', () => pm.expect(pm.response.json().data.status).to.eql('in_progress'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks/{{task_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks",
+            "{{task_id}}"
+          ]
+        },
+        "description": "Atualiza apenas os campos enviados. O status `deleted` não é aceito: use a requisição de exclusão.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"in_progress\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Atualizar tarefa (PUT)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Tarefa atualizada', () => {",
+              "    const task = pm.response.json().data;",
+              "    pm.expect(task.title).to.eql('Estudar Laravel 13');",
+              "    pm.expect(task.status).to.eql('completed');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks/{{task_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks",
+            "{{task_id}}"
+          ]
+        },
+        "description": "Atualiza a tarefa enviando todos os campos.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Estudar Laravel 13\",\n  \"description\": \"Eloquent, migrations e API Resources\",\n  \"status\": \"completed\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Excluir tarefa",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks/{{task_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks",
+            "{{task_id}}"
+          ]
+        },
+        "description": "Exclusão lógica (soft delete): preenche `deleted_at` e muda o status para `deleted`."
+      },
+      "response": []
+    },
+    {
+      "name": "Listar tarefas excluídas",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Tarefa excluída aparece na lixeira', () => {",
+              "    const ids = pm.response.json().data.map(task => String(task.id));",
+              "    pm.expect(ids).to.include(String(pm.collectionVariables.get('task_id')));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks?status=deleted",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks"
+          ],
+          "query": [
+            {
+              "key": "status",
+              "value": "deleted"
+            }
+          ]
+        },
+        "description": "Lista a lixeira: tarefas com status `deleted`."
+      },
+      "response": []
+    },
+    {
+      "name": "Restaurar tarefa",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Tarefa restaurada como pendente', () => {",
+              "    const task = pm.response.json().data;",
+              "    pm.expect(task.status).to.eql('pending');",
+              "    pm.expect(task.deleted_at).to.be.null;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks/{{task_id}}/restore",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks",
+            "{{task_id}}",
+            "restore"
+          ]
+        },
+        "description": "Restaura uma tarefa excluída; ela volta com status `pending`."
+      },
+      "response": []
+    },
+    {
+      "name": "Criar tarefa inválida (422)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
+              "pm.test('Retorna os erros de validação', () => {",
+              "    pm.expect(pm.response.json().errors).to.have.keys('title', 'status');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks"
+          ]
+        },
+        "description": "Exemplo de erro de validação: sem `title` e com o status `deleted`, que não é aceito na criação.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"description\": \"Tarefa sem título\",\n  \"status\": \"deleted\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "task_id",
+      "value": "1",
+      "type": "string"
+    }
+  ]
+}

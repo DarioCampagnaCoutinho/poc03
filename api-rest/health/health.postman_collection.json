@@ -1,0 +1,269 @@
+{
+  "info": {
+    "name": "POC 03 - Health",
+    "description": "Health check dos serviços da POC 03 (Nginx, PHP-FPM/Laravel, PostgreSQL e cache).\n\nVariável da coleção:\n- `base_url`: endereço da API (padrão `http://localhost:8000`)\n\nAs rotas `/api/health*` retornam 200 quando o serviço está ok e 503 quando falha.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Todos os serviços",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Serviço ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        },
+        "description": "Verifica todos os serviços. Retorna 200 se todos estiverem ok e 503 se algum falhar."
+      },
+      "response": []
+    },
+    {
+      "name": "App (PHP-FPM / Laravel)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Serviço ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/health/app",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "health",
+            "app"
+          ]
+        },
+        "description": "Versões do PHP e do Laravel e o ambiente da aplicação."
+      },
+      "response": []
+    },
+    {
+      "name": "Webserver (Nginx)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Serviço ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/health/webserver",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "health",
+            "webserver"
+          ]
+        },
+        "description": "O app faz uma requisição ao endpoint /nginx-health do Nginx."
+      },
+      "response": []
+    },
+    {
+      "name": "Banco de dados (PostgreSQL)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Serviço ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/health/database",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "health",
+            "database"
+          ]
+        },
+        "description": "Abre a conexão com o PostgreSQL, executa uma query e retorna a versão."
+      },
+      "response": []
+    },
+    {
+      "name": "Cache",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Serviço ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/health/cache",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "health",
+            "cache"
+          ]
+        },
+        "description": "Grava, lê e remove uma chave no cache (store database, no PostgreSQL)."
+      },
+      "response": []
+    },
+    {
+      "name": "Laravel (/up)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/up",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "up"
+          ]
+        },
+        "description": "Health check padrão do Laravel."
+      },
+      "response": []
+    },
+    {
+      "name": "Nginx (/nginx-health)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Responde ok', () => pm.expect(pm.response.text().trim()).to.eql('ok'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/nginx-health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "nginx-health"
+          ]
+        },
+        "description": "Health check respondido diretamente pelo Nginx, sem passar pelo PHP."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ]
+}
