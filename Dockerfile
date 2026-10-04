@@ -6,7 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         unzip \
         libzip-dev \
         libicu-dev \
-    && docker-php-ext-install bcmath intl opcache zip \
+        libpq-dev \
+    && docker-php-ext-install bcmath intl opcache pdo_pgsql zip \
     && rm -rf /var/lib/apt/lists/*
 
 # Composer
