@@ -124,7 +124,6 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   ├── Http/
 │   │   ├── Controllers/Api/
 │   │   │   ├── AuthController.php          # Cadastro, login, logout e usuário autenticado
-│   │   │   ├── HelloWorldController.php    # GET /api/hello
 │   │   │   ├── HealthCheckController.php   # GET /api/health (PHP, Nginx e PostgreSQL)
 │   │   │   └── TaskController.php          # CRUD /api/tasks + restore
 │   │   ├── Requests/
@@ -202,7 +201,6 @@ Todas as rotas da API ficam sob o prefixo `/api`.
 
 | Método | Rota | Descrição | Autenticação |
 |---|---|---|---|
-| `GET` | `/api/hello` | Retorna uma mensagem de Hello World | Não |
 | `POST` | `/api/auth/register` | Cadastra um usuário e retorna um token | Não |
 | `POST` | `/api/auth/login` | Troca e-mail e senha por um token | Não |
 | `GET` | `/api/auth/me` | Retorna o usuário autenticado | Token |
@@ -400,17 +398,7 @@ Exemplo de falha (Postgres parado), com HTTP 503:
 
 A resposta não expõe o motivo da falha; ele fica registrado no log da aplicação (`storage/logs/laravel.log`).
 
-### Hello World
-
-```bash
-curl http://localhost:8000/api/hello
-```
-
-```json
-{
-  "message": "Hello World"
-}
-```
+### Erros
 
 Erros em rotas `/api/*` são sempre devolvidos em JSON (configurado em `bootstrap/app.php`).
 
@@ -553,6 +541,10 @@ docker compose exec app bash
 - [x] `HealthCheckService` removido; a lógica ficou no `HealthCheckController` (controller invocável)
 - [x] Falhas registradas no log da aplicação, já que a resposta não traz mais a mensagem de erro
 - [x] Testes reescritos (tudo ok, Nginx fora e PostgreSQL fora) e coleção do Postman reduzida a uma requisição
+
+### Etapa 8 — Remoção do Hello World ✅
+
+- [x] Removidos o `HelloWorldController` e a rota `GET /api/hello`, criados na Etapa 1 apenas para validar a estrutura
 
 ### Pendências conhecidas
 

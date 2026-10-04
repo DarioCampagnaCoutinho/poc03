@@ -2,13 +2,10 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\HealthCheckController;
-use App\Http\Controllers\Api\HelloWorldController;
 use App\Http\Controllers\Api\TaskController;
 use Illuminate\Support\Facades\Route;
 
 // Rotas públicas
-
-Route::get('/hello', HelloWorldController::class);
 
 Route::get('/health', HealthCheckController::class);
 
