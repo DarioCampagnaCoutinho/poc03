@@ -1,58 +1,187 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# POC 03 — API REST com Laravel 13 + Docker
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Prova de conceito de uma API REST em **Laravel 13**, rodando em **PHP 8.3** dentro de containers Docker (PHP-FPM + Nginx).
+O projeto está sendo construído por etapas; o histórico do que já foi entregue está em [Status do projeto](#status-do-projeto).
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Tecnologias e versões
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+| Tecnologia | Versão | Observação |
+|---|---|---|
+| PHP | 8.3.35 | Imagem oficial `php:8.3-fpm` (Debian 13 "trixie") |
+| Laravel Framework | 13.34.0 | Restrição no `composer.json`: `^13.17` |
+| Symfony (componentes) | 7.4 | Resolvido para manter compatibilidade com PHP 8.3 |
+| Laravel Sanctum | 4.3.3 | Autenticação de API (instalado, ainda não utilizado) |
+| Composer | 2.10.3 | Copiado da imagem `composer:2` |
+| Nginx | 1.31.6 | Imagem `nginx:alpine` |
+| SQLite | — | Banco padrão (`database/database.sqlite`) |
+| PHPUnit | 12.5.37 | Testes |
+| Laravel Pint | 1.32.1 | Formatação de código |
+| Docker Engine / Compose | 29.7.2 / v5.4.0 | Versões usadas no desenvolvimento |
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+**Extensões PHP adicionadas na imagem:** `bcmath`, `intl`, `opcache`, `zip` (além das que já vêm na imagem oficial, como `pdo_sqlite`, `mbstring` e `openssl`).
 
-## Learning Laravel
+> As versões do Nginx (tag `nginx:alpine`) e do patch do PHP (tag `php:8.3-fpm`) podem mudar em um novo build. Os valores acima foram registrados em 03/10/2026.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+---
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Arquitetura
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```
+        Cliente HTTP
+             │  :8000
+             ▼
+   ┌───────────────────┐   FastCGI :9000   ┌────────────────────┐
+   │   poc03-nginx     │ ────────────────▶ │     poc03-app      │
+   │   nginx:alpine    │                   │  php:8.3-fpm       │
+   │   serve /public   │                   │  Laravel 13        │
+   └───────────────────┘                   └────────────────────┘
+             │                                       │
+             └──────────── bind mount: . → /var/www/html
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+- **app**: PHP-FPM com Composer. Executa a aplicação Laravel e os comandos `artisan`/`composer`.
+- **nginx**: recebe as requisições na porta `8000` e repassa os scripts PHP para o `app`.
+- O código-fonte é montado como volume nos dois containers, então alterações no código têm efeito imediato, sem rebuild.
 
-## Contributing
+---
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Estrutura relevante
 
-## Code of Conduct
+```
+.
+├── Dockerfile                      # Imagem PHP 8.3-FPM + extensões + Composer
+├── compose.yaml                    # Serviços app (PHP-FPM) e nginx
+├── .dockerignore
+├── docker/
+│   └── nginx/
+│       └── default.conf            # Virtual host do Nginx para o Laravel
+├── app/Http/Controllers/Api/
+│   └── HelloWorldController.php    # Controller do endpoint /api/hello
+└── routes/
+    └── api.php                     # Rotas da API (prefixo /api)
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+---
 
-## Security Vulnerabilities
+## Como executar
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### Pré-requisitos
 
-## License
+- Docker Desktop (ou Docker Engine) com Docker Compose
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Não é necessário ter PHP ou Composer instalados na máquina: tudo roda dentro do container.
+
+### Primeira execução (após clonar)
+
+```bash
+# 1. Variáveis de ambiente
+cp .env.example .env
+
+# 2. Build e subida dos containers
+docker compose up -d --build
+
+# 3. Dependências PHP
+docker compose exec app composer install
+
+# 4. Chave da aplicação
+docker compose exec app php artisan key:generate
+
+# 5. Banco SQLite + migrations
+touch database/database.sqlite
+docker compose exec app php artisan migrate
+```
+
+A API fica disponível em **http://localhost:8000**.
+
+### Uso diário
+
+```bash
+docker compose up -d        # subir os containers
+docker compose down         # parar e remover os containers
+docker compose logs -f      # acompanhar os logs
+```
+
+---
+
+## Endpoints
+
+Todas as rotas da API ficam sob o prefixo `/api`.
+
+| Método | Rota | Descrição | Autenticação |
+|---|---|---|---|
+| `GET` | `/api/hello` | Retorna uma mensagem de Hello World | Não |
+| `GET` | `/api/user` | Retorna o usuário autenticado (rota padrão do Sanctum) | `auth:sanctum` |
+| `GET` | `/up` | Health check da aplicação | Não |
+
+### Exemplo
+
+```bash
+curl http://localhost:8000/api/hello
+```
+
+```json
+{
+  "message": "Hello World"
+}
+```
+
+Erros em rotas `/api/*` são sempre devolvidos em JSON (configurado em `bootstrap/app.php`).
+
+---
+
+## Comandos úteis
+
+```bash
+# Artisan
+docker compose exec app php artisan route:list --path=api
+docker compose exec app php artisan make:controller Api/NomeController
+
+# Composer
+docker compose exec app composer require vendor/pacote
+
+# Testes
+docker compose exec app php artisan test
+
+# Formatação de código (Pint)
+docker compose exec app ./vendor/bin/pint
+
+# Shell dentro do container
+docker compose exec app bash
+```
+
+---
+
+## Status do projeto
+
+### Etapa 1 — Estrutura base e Hello World ✅
+
+- [x] Projeto Laravel 13 criado com Composer rodando em PHP 8.3, para que as dependências fossem resolvidas para essa versão
+- [x] `Dockerfile` com PHP 8.3-FPM, extensões e Composer
+- [x] `compose.yaml` com os serviços `app` (PHP-FPM) e `nginx`
+- [x] Configuração do Nginx para o Laravel
+- [x] Scaffolding de API instalado (`php artisan install:api`): `routes/api.php` e Laravel Sanctum
+- [x] `HelloWorldController` (controller invocável) com a rota `GET /api/hello`
+- [x] Endpoint validado via `curl` (HTTP 200, `application/json`) e suíte de testes padrão passando
+
+### Pendências conhecidas
+
+- Adicionar o trait `Laravel\Sanctum\HasApiTokens` ao model `User` quando a autenticação for implementada.
+- O banco atual é SQLite; um serviço de MySQL/PostgreSQL pode ser adicionado ao `compose.yaml` em uma próxima etapa.
+
+---
+
+## Decisões técnicas
+
+- **Composer executado em PHP 8.3:** a imagem oficial `composer` usa uma versão mais nova do PHP, o que poderia levar o Composer a escolher pacotes que exigem PHP 8.4+ (por exemplo, Symfony 8). Por isso o projeto foi criado dentro da própria imagem PHP 8.3, garantindo um `composer.lock` compatível.
+- **Nginx + PHP-FPM em vez de `php artisan serve`:** é mais próximo de um ambiente real e suporta requisições concorrentes.
+- **Controller invocável:** cada endpoint simples tem um controller de ação única (`__invoke`), o que mantém as rotas enxutas.
+
+---
+
+## Referências
+
+- [Documentação do Laravel 13](https://laravel.com/docs/13.x)
+- [Laravel — API e Sanctum](https://laravel.com/docs/13.x/sanctum)
+- [Imagem oficial do PHP no Docker Hub](https://hub.docker.com/_/php)
