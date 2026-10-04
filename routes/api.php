@@ -4,16 +4,13 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\HealthCheckController;
 use App\Http\Controllers\Api\HelloWorldController;
 use App\Http\Controllers\Api\TaskController;
-use App\Services\HealthCheckService;
 use Illuminate\Support\Facades\Route;
 
 // Rotas públicas
 
 Route::get('/hello', HelloWorldController::class);
 
-Route::get('/health', [HealthCheckController::class, 'index']);
-Route::get('/health/{service}', [HealthCheckController::class, 'show'])
-    ->whereIn('service', HealthCheckService::SERVICES);
+Route::get('/health', HealthCheckController::class);
 
 // Até 10 tentativas por minuto por IP (proteção contra força bruta).
 Route::middleware('throttle:10,1')->group(function () {

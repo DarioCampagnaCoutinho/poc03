@@ -3,20 +3,26 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\HealthCheckService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 class HealthCheckController extends Controller
 {
-    public function __construct(private HealthCheckService $health) {}
-
     /**
-     * Status de todos os serviços.
+     * Verifica se PHP, Nginx e PostgreSQL estão funcionando.
      */
-    public function index(): JsonResponse
+    public function __invoke(): JsonResponse
     {
-        $services = $this->health->checkAll();
-        $healthy = collect($services)->every(fn (array $result) => $result['status'] === 'ok');
+        $services = [
+            // Se esta linha executou, o PHP-FPM está respondendo.
+            'php' => 'ok',
+            // Endpoint respondido pelo próprio Nginx, sem passar pelo PHP.
+            'nginx' => $this->check(fn () => Http::timeout(3)->get(config('services.nginx.url').'/nginx-health')->throw()),
+            'postgresql' => $this->check(fn () => DB::select('select 1')),
+        ];
+
+        $healthy = ! in_array('error', $services, true);
 
         return response()->json([
             'status' => $healthy ? 'ok' : 'error',
@@ -25,15 +31,14 @@ class HealthCheckController extends Controller
     }
 
     /**
-     * Status de um serviço específico.
+     * Executa a verificação e retorna "ok" ou "error". A exceção é registrada no log.
      */
-    public function show(string $service): JsonResponse
+    private function check(callable $callback): string
     {
-        $result = $this->health->check($service);
+        return rescue(function () use ($callback) {
+            $callback();
 
-        return response()->json(
-            ['service' => $service, ...$result],
-            $result['status'] === 'ok' ? 200 : 503,
-        );
+            return 'ok';
+        }, 'error');
     }
 }

@@ -125,7 +125,7 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   │   ├── Controllers/Api/
 │   │   │   ├── AuthController.php          # Cadastro, login, logout e usuário autenticado
 │   │   │   ├── HelloWorldController.php    # GET /api/hello
-│   │   │   ├── HealthCheckController.php   # GET /api/health e /api/health/{service}
+│   │   │   ├── HealthCheckController.php   # GET /api/health (PHP, Nginx e PostgreSQL)
 │   │   │   └── TaskController.php          # CRUD /api/tasks + restore
 │   │   ├── Requests/
 │   │   │   ├── LoginRequest.php            # Validação do login
@@ -135,11 +135,9 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   │   └── Resources/
 │   │       ├── TaskResource.php            # Formato JSON da tarefa
 │   │       └── UserResource.php            # Formato JSON do usuário
-│   ├── Models/
-│   │   ├── Task.php                    # Model Task (soft delete + sincronização de status)
-│   │   └── User.php                    # Model User (HasApiTokens do Sanctum)
-│   └── Services/
-│       └── HealthCheckService.php      # Lógica de verificação de cada serviço
+│   └── Models/
+│       ├── Task.php                    # Model Task (soft delete + sincronização de status)
+│       └── User.php                    # Model User (HasApiTokens do Sanctum)
 ├── database/
 │   ├── factories/TaskFactory.php
 │   └── migrations/…_create_tasks_table.php
@@ -147,7 +145,7 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   └── api.php                         # Rotas da API (prefixo /api)
 └── tests/Feature/
     ├── AuthApiTest.php                 # Testes das rotas de autenticação
-    ├── HealthCheckTest.php             # Testes das rotas de health check
+    ├── HealthCheckTest.php             # Testes do health check
     ├── TaskApiTest.php                 # Testes das rotas de tarefas
     └── TaskTest.php                    # Testes do model Task
 ```
@@ -215,11 +213,7 @@ Todas as rotas da API ficam sob o prefixo `/api`.
 | `PUT/PATCH` | `/api/tasks/{id}` | Atualiza uma tarefa | Token |
 | `DELETE` | `/api/tasks/{id}` | Exclui uma tarefa (soft delete) | Token |
 | `POST` | `/api/tasks/{id}/restore` | Restaura uma tarefa excluída | Token |
-| `GET` | `/api/health` | Status de todos os serviços | Não |
-| `GET` | `/api/health/app` | PHP-FPM / Laravel: versões e ambiente | Não |
-| `GET` | `/api/health/webserver` | Nginx: requisição do app ao endpoint `/nginx-health` | Não |
-| `GET` | `/api/health/database` | PostgreSQL: conexão, query de teste e versão | Não |
-| `GET` | `/api/health/cache` | Cache: grava, lê e remove uma chave (store `database`) | Não |
+| `GET` | `/api/health` | Verifica PHP, Nginx e PostgreSQL | Não |
 | `GET` | `/up` | Health check padrão do Laravel | Não |
 | `GET` | `/nginx-health` | Health check do Nginx (não passa pelo PHP) | Não |
 
@@ -368,7 +362,13 @@ curl -X POST   -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" h
 
 ### Health check
 
-As rotas `/api/health*` retornam **HTTP 200** quando o serviço verificado está ok e **HTTP 503** quando algum falha. Cada serviço informa também o tempo de verificação em `latency_ms`.
+Uma única requisição verifica os três serviços e responde **HTTP 200** quando todos estão ok ou **HTTP 503** quando algum falha.
+
+| Serviço | Como é verificado |
+|---|---|
+| `php` | Se a requisição foi processada pelo Laravel, o PHP-FPM está respondendo |
+| `nginx` | O app chama `/nginx-health`, respondido diretamente pelo Nginx |
+| `postgresql` | O app executa `select 1` no banco |
 
 ```bash
 curl http://localhost:8000/api/health
@@ -378,29 +378,27 @@ curl http://localhost:8000/api/health
 {
   "status": "ok",
   "services": {
-    "app":       { "status": "ok", "php": "8.3.35", "laravel": "13.34.0", "environment": "local", "latency_ms": 0.01 },
-    "webserver": { "status": "ok", "server": "nginx/1.31.6", "latency_ms": 44.7 },
-    "database":  { "status": "ok", "driver": "pgsql", "database": "poc03", "version": "18.6", "latency_ms": 18.08 },
-    "cache":     { "status": "ok", "store": "database", "latency_ms": 31.08 }
+    "php": "ok",
+    "nginx": "ok",
+    "postgresql": "ok"
   }
 }
 ```
 
-Exemplo de falha (Postgres parado). Como o cache usa a tabela `cache` do banco, ele também falha:
+Exemplo de falha (Postgres parado), com HTTP 503:
 
 ```json
 {
   "status": "error",
   "services": {
-    "app":       { "status": "ok", "...": "..." },
-    "webserver": { "status": "ok", "...": "..." },
-    "database":  { "status": "error", "error": "SQLSTATE[08006] [7] could not translate host name \"postgres\" ...", "latency_ms": 12.3 },
-    "cache":     { "status": "error", "error": "SQLSTATE[08006] [7] could not translate host name \"postgres\" ...", "latency_ms": 9.8 }
+    "php": "ok",
+    "nginx": "ok",
+    "postgresql": "error"
   }
 }
 ```
 
-A mensagem detalhada do erro só é exibida com `APP_DEBUG=true`; caso contrário, a API retorna `"Service unavailable."`.
+A resposta não expõe o motivo da falha; ele fica registrado no log da aplicação (`storage/logs/laravel.log`).
 
 ### Hello World
 
@@ -425,7 +423,7 @@ A pasta [`api-rest/`](api-rest/) traz as coleções prontas para importar no Pos
 | Coleção | Arquivo | Requisições |
 |---|---|---|
 | POC 03 - Auth | `api-rest/auth/auth.postman_collection.json` | Cadastro, usuário autenticado, logout, login e exemplos de erro (401 e 422) |
-| POC 03 - Health | `api-rest/health/health.postman_collection.json` | Health check de todos os serviços, `/up` e `/nginx-health` |
+| POC 03 - Health | `api-rest/health/health.postman_collection.json` | Health check de PHP, Nginx e PostgreSQL |
 | POC 03 - Task | `api-rest/task/task.postman_collection.json` | CRUD completo de tarefas, lixeira, restauração e exemplos de erro (401 e 422) |
 
 **Importar:** no Postman, clique em **Import** e arraste a pasta `api-rest` (ou os três arquivos `.json`).
@@ -547,6 +545,14 @@ docker compose exec app bash
 - [x] Correção: rotas `api/*` sem token respondem 401 mesmo sem o header `Accept: application/json` (antes: erro 500 "Route [login] not defined")
 - [x] Testes de autenticação (`tests/Feature/AuthApiTest.php`) e `TaskApiTest` autenticando com `Sanctum::actingAs`
 - [x] Coleção do Postman `auth` e coleção `task` com autenticação Bearer, validadas com o Newman
+
+### Etapa 7 — Health check simplificado ✅
+
+- [x] Uma única rota, `GET /api/health`, verifica PHP, Nginx e PostgreSQL e retorna apenas `ok` ou `error` por serviço
+- [x] Removidas as rotas `/api/health/{app|webserver|database|cache}`, a verificação de cache e os detalhes (versões e `latency_ms`)
+- [x] `HealthCheckService` removido; a lógica ficou no `HealthCheckController` (controller invocável)
+- [x] Falhas registradas no log da aplicação, já que a resposta não traz mais a mensagem de erro
+- [x] Testes reescritos (tudo ok, Nginx fora e PostgreSQL fora) e coleção do Postman reduzida a uma requisição
 
 ### Pendências conhecidas
 

@@ -2,6 +2,10 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Database\QueryException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -12,47 +16,52 @@ class HealthCheckTest extends TestCase
         parent::setUp();
 
         Http::preventStrayRequests();
+        Exceptions::fake();
     }
 
     public function test_all_services_are_healthy(): void
     {
-        Http::fake(['*/nginx-health' => Http::response("ok\n", 200, ['Server' => 'nginx'])]);
+        Http::fake(['*/nginx-health' => Http::response("ok\n")]);
 
         $this->getJson('/api/health')
             ->assertOk()
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('services.app.status', 'ok')
-            ->assertJsonPath('services.webserver.status', 'ok')
-            ->assertJsonPath('services.database.status', 'ok')
-            ->assertJsonPath('services.cache.status', 'ok');
+            ->assertExactJson([
+                'status' => 'ok',
+                'services' => ['php' => 'ok', 'nginx' => 'ok', 'postgresql' => 'ok'],
+            ]);
+
+        Exceptions::assertNothingReported();
     }
 
-    public function test_single_service_can_be_checked(): void
-    {
-        $this->getJson('/api/health/database')
-            ->assertOk()
-            ->assertJsonPath('service', 'database')
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('driver', 'pgsql');
-    }
-
-    public function test_failing_service_returns_service_unavailable(): void
+    public function test_nginx_failure_returns_service_unavailable(): void
     {
         Http::fake(['*/nginx-health' => Http::response('', 502)]);
 
-        $this->getJson('/api/health/webserver')
+        $this->getJson('/api/health')
             ->assertServiceUnavailable()
-            ->assertJsonPath('status', 'error');
+            ->assertExactJson([
+                'status' => 'error',
+                'services' => ['php' => 'ok', 'nginx' => 'error', 'postgresql' => 'ok'],
+            ]);
+
+        Exceptions::assertReported(RequestException::class);
+    }
+
+    public function test_postgresql_failure_returns_service_unavailable(): void
+    {
+        Http::fake(['*/nginx-health' => Http::response("ok\n")]);
+
+        // Porta sem nenhum serviço escutando: a conexão é recusada.
+        config(['database.connections.pgsql.port' => 1]);
+        DB::purge('pgsql');
 
         $this->getJson('/api/health')
             ->assertServiceUnavailable()
-            ->assertJsonPath('status', 'error')
-            ->assertJsonPath('services.webserver.status', 'error')
-            ->assertJsonPath('services.database.status', 'ok');
-    }
+            ->assertExactJson([
+                'status' => 'error',
+                'services' => ['php' => 'ok', 'nginx' => 'ok', 'postgresql' => 'error'],
+            ]);
 
-    public function test_unknown_service_returns_not_found(): void
-    {
-        $this->getJson('/api/health/redis')->assertNotFound();
+        Exceptions::assertReported(QueryException::class);
     }
 }
