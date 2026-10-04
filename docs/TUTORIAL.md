@@ -1,6 +1,6 @@
 # Tutorial: usando a API da POC 03
 
-Este tutorial mostra, passo a passo, como subir o sistema e usar a API: criar uma conta, fazer login e gerenciar tarefas do início ao fim. Você pode seguir pelo **terminal** (com `curl`) ou pelo **Postman**.
+Este tutorial mostra, passo a passo, como subir o sistema e usar a API: fazer login, gerenciar tarefas do início ao fim e ver as permissões funcionando. Você pode seguir pelo **terminal** (com `curl`) ou pelo **Postman**.
 
 Tempo estimado: 15 minutos.
 
@@ -10,7 +10,7 @@ Tempo estimado: 15 minutos.
 
 1. [Como o sistema funciona](#1-como-o-sistema-funciona)
 2. [Subir o ambiente](#2-subir-o-ambiente)
-3. [Criar uma conta e fazer login](#3-criar-uma-conta-e-fazer-login)
+3. [Fazer login](#3-fazer-login)
 4. [Trabalhar com tarefas](#4-trabalhar-com-tarefas)
 5. [Sair (logout)](#5-sair-logout)
 6. [Usando o Postman](#6-usando-o-postman)
@@ -34,12 +34,14 @@ Você (curl / Postman)
 O uso segue sempre o mesmo caminho:
 
 ```
-Criar conta  ──►  Login (recebe um token)  ──►  Usar as tarefas com o token  ──►  Logout
+Login (recebe um token)  ──►  Usar as tarefas com o token  ──►  Logout
 ```
 
-O **token** é a sua "chave de acesso": todas as rotas de tarefas exigem que ele seja enviado no header `Authorization: Bearer <token>`.
+- O **token** é a sua "chave de acesso": todas as rotas de tarefas exigem que ele seja enviado no header `Authorization: Bearer <token>`.
+- Não existe cadastro: os usuários são criados pelo **administrador**, que também define o que cada um pode fazer (as **permissões**). Por exemplo, um usuário pode só visualizar as tarefas, enquanto outro pode criar, alterar e excluir.
+- As tarefas são **compartilhadas**: quem tem a permissão de uma operação pode realizá-la em qualquer tarefa, inclusive nas criadas por outras pessoas.
 
-As tarefas são **compartilhadas** entre todos os usuários: depois de logado, você vê e pode alterar qualquer tarefa, inclusive as criadas por outras pessoas. Os diagramas dessa regra estão em [Regras de negócio](REGRAS-DE-NEGOCIO.md).
+Os diagramas dessas regras estão em [Regras de negócio](REGRAS-DE-NEGOCIO.md).
 
 ---
 
@@ -64,9 +66,10 @@ docker compose up -d --build
 docker compose exec app composer install
 docker compose exec app php artisan key:generate
 docker compose exec app php artisan migrate
+docker compose exec app php artisan db:seed
 ```
 
-O primeiro `up --build` demora alguns minutos, porque a imagem do PHP é construída.
+O primeiro `up --build` demora alguns minutos, porque a imagem do PHP é construída. O último comando (`db:seed`) cria as permissões, os grupos e os usuários de desenvolvimento usados neste tutorial.
 
 ### Nas próximas vezes
 
@@ -105,39 +108,21 @@ Se algum serviço aparecer como `"error"`, veja a seção [Quando algo dá errad
 
 ---
 
-## 3. Criar uma conta e fazer login
+## 3. Fazer login
 
 > **Dica:** abra um terminal e use o mesmo durante todo o tutorial. As variáveis e funções criadas aqui (como `TOKEN`) só existem na sessão em que foram definidas.
 
-### 3.1 Cadastrar um usuário
+### 3.1 Usuários disponíveis
 
-```bash
-curl -X POST http://localhost:8000/api/auth/register \
-  -H 'Accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "Ana", "email": "ana@example.com", "password": "senha-segura", "password_confirmation": "senha-segura"}'
-```
+O `db:seed` criou três usuários, todos com a senha `password`:
 
-Resposta (`201 Created`, formatada para facilitar a leitura):
+| Usuário | E-mail | Grupo (papel) | Pode |
+|---|---|---|---|
+| Dario | `dario@example.com` | `super-admin` | Tudo |
+| Maria | `maria@example.com` | `leitor` | Fazer login e visualizar tarefas |
+| Ana | `ana@example.com` | `leitor` | Fazer login e visualizar tarefas |
 
-```json
-{
-  "data": {
-    "id": 1,
-    "name": "Ana",
-    "email": "ana@example.com",
-    "email_verified_at": null,
-    "created_at": "2026-10-04T19:14:59.000000Z",
-    "updated_at": "2026-10-04T19:14:59.000000Z"
-  },
-  "token": "1|6hwHuuU4dvtyTsWzqeLveK6N8SmPb7AIHJ3IYBto9e9382f6",
-  "token_type": "Bearer"
-}
-```
-
-Regras do cadastro: e-mail válido, em letras minúsculas e ainda não cadastrado; senha com **pelo menos 8 caracteres**, repetida em `password_confirmation`.
-
-O cadastro já devolve um token, mas no dia a dia você vai obtê-lo pelo login.
+Neste tutorial você vai usar o **Dario**, que pode tudo. No [passo 4.8](#48-permissões-na-prática-entrando-como-maria) você entra como Maria para ver as permissões em ação.
 
 ### 3.2 Fazer login e guardar o token
 
@@ -147,17 +132,17 @@ O comando abaixo faz o login e guarda o token na variável `TOKEN`:
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Accept: application/json' \
   -H 'Content-Type: application/json' \
-  -d '{"email": "ana@example.com", "password": "senha-segura"}' \
+  -d '{"email": "dario@example.com", "password": "password"}' \
   | python3 -c 'import sys, json; print(json.load(sys.stdin)["token"])')
 
 echo $TOKEN
 ```
 
 ```
-2|N6zGoFsyulIUyKFtMoc5xnEnUJgqe5lsw89i1uNFbbff78bf
+1|N6zGoFsyulIUyKFtMoc5xnEnUJgqe5lsw89i1uNFbbff78bf
 ```
 
-> Sem `python3`? Rode o login sem a parte do `| python3 ...`, copie o valor de `"token"` da resposta e guarde manualmente: `TOKEN='2|N6zGo...'`.
+> Sem `python3`? Rode o login sem a parte do `| python3 ...`, copie o valor de `"token"` da resposta e guarde manualmente: `TOKEN='1|N6zGo...'`.
 
 Cada login gera um **token novo**. O token é exibido só nesse momento; o banco guarda apenas uma versão criptografada (hash) dele.
 
@@ -169,9 +154,25 @@ curl http://localhost:8000/api/auth/me \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Resposta (formatada para facilitar a leitura):
+
 ```json
-{"data":{"id":1,"name":"Ana","email":"ana@example.com","email_verified_at":null,"created_at":"2026-10-04T19:14:59.000000Z","updated_at":"2026-10-04T19:14:59.000000Z"}}
+{
+  "data": {
+    "id": 1,
+    "name": "Dario",
+    "email": "dario@example.com",
+    "email_verified_at": null,
+    "roles": ["super-admin"],
+    "permissions": ["tasks.create", "tasks.delete", "tasks.restore", "tasks.update", "tasks.view"],
+    "created_at": "2026-10-04T20:25:47.000000Z",
+    "updated_at": "2026-10-04T20:25:47.000000Z"
+  }
+}
 ```
+
+- `roles`: os grupos do usuário.
+- `permissions`: o que ele pode fazer com as tarefas.
 
 ### 3.4 Um atalho para os próximos passos
 
@@ -364,6 +365,57 @@ api POST /tasks/3/restore
 HTTP 200
 ```
 
+### 4.8 Permissões na prática: entrando como Maria
+
+Até aqui você usou o Dario, que pode tudo. A Maria está no grupo `leitor`, que só tem a permissão de **visualizar** tarefas. Guarde o token dela em outra variável:
+
+```bash
+TOKEN_DARIO=$TOKEN
+
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H 'Accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "maria@example.com", "password": "password"}' \
+  | python3 -c 'import sys, json; print(json.load(sys.stdin)["token"])')
+```
+
+Como a função `api` usa a variável `TOKEN`, as próximas requisições saem como Maria. Listar funciona:
+
+```bash
+api GET /tasks
+```
+
+```
+{"data":[...], "links": {...}, "meta": {...}}
+HTTP 200
+```
+
+Criar, alterar, excluir ou restaurar, não:
+
+```bash
+api POST /tasks -d '{"title": "Tarefa da Maria"}'
+```
+
+```
+{"message": "This action is unauthorized.", ...}
+HTTP 403
+```
+
+Repare na diferença entre os dois erros de acesso:
+
+| Código | Significado |
+|---|---|
+| `401` | A API **não sabe quem você é** (sem token, token inválido ou revogado) |
+| `403` | A API **sabe quem você é**, mas você **não tem permissão** para essa operação |
+
+Para voltar a usar o Dario:
+
+```bash
+TOKEN=$TOKEN_DARIO
+```
+
+> Quem define as permissões é o administrador. Por enquanto isso é feito pelo Tinker; os comandos estão na seção [Autorização do README](../README.md#autorização-papéis-e-permissões).
+
 ---
 
 ## 5. Sair (logout)
@@ -406,10 +458,13 @@ A pasta `api-rest/` traz coleções prontas com todas as requisições deste tut
 ### Usar
 
 1. Em **POC 03 - Health**, envie **Health check** para confirmar que tudo está no ar.
-2. Em **POC 03 - Auth**, envie **Registrar usuário** (cria um usuário com e-mail único) ou **Login**.
+2. Em **POC 03 - Auth**, envie **Login**. Por padrão ele entra como Dario (`super-admin`).
    O token é salvo automaticamente na variável global `token`; você não precisa copiá-lo.
 3. Em **POC 03 - Task**, envie as requisições na ordem em que aparecem: criar, listar, consultar, atualizar, excluir, ver a lixeira e restaurar.
    A requisição **Criar tarefa** guarda o id da tarefa criada, e as seguintes usam esse id sozinhas.
+4. As últimas requisições da coleção Task entram como Maria (`leitor`): ela consegue listar (200), mas não consegue criar (403).
+
+Para entrar com outro usuário, troque a variável `email` na aba **Variables** da coleção Auth e envie **Login** de novo.
 
 Para rodar uma coleção inteira de uma vez, clique nos três pontos da coleção → **Run collection**. Cada requisição tem testes automáticos, e o Runner mostra quais passaram.
 
@@ -425,9 +480,11 @@ Para mudar o endereço da API (por exemplo, outra porta), edite a variável `bas
 |---|---|---|
 | `curl: (7) Failed to connect to localhost port 8000` | Containers parados ou Docker fechado | Abra o Docker Desktop e rode `docker compose up -d` |
 | `HTTP 401` com `"Unauthenticated."` | Token ausente, digitado errado ou já invalidado pelo logout | Faça login de novo e atualize a variável `TOKEN` |
+| `HTTP 403` com `"This action is unauthorized."` | Seu usuário não tem a permissão dessa operação | Confira suas permissões com `api GET /auth/me` e peça ao administrador |
 | `HTTP 404` em `/tasks/{id}` | A tarefa não existe ou está na lixeira | Confira o id com `api GET /tasks` ou `api GET '/tasks?status=deleted'` |
 | `HTTP 422` | Dados inválidos | Leia o bloco `errors` da resposta: ele indica o campo e o problema (tabela abaixo) |
-| `HTTP 429` | Mais de 10 tentativas de cadastro/login em 1 minuto | Aguarde um minuto e tente de novo |
+| `HTTP 422` no login com `"These credentials do not match our records."` | E-mail ou senha errados, ou o usuário não existe | Confira os dados; se o banco foi recriado, rode `docker compose exec app php artisan db:seed` |
+| `HTTP 429` | Mais de 10 tentativas de login em 1 minuto | Aguarde um minuto e tente de novo |
 | `/api/health` com `HTTP 503` | Algum serviço com `"error"` | Veja `docker compose ps` e os logs: `docker compose logs postgres` ou `storage/logs/laravel.log` |
 | `command not found: curl` dentro da função `api` | A função usa uma variável chamada `path` no zsh | Use a função exatamente como no [passo 3.4](#34-um-atalho-para-os-próximos-passos) |
 | Erro `port is already allocated` ao subir | Porta 8000 ou 5432 ocupada por outro programa | Feche o programa ou altere a porta em `compose.yaml` |
@@ -441,10 +498,7 @@ As mensagens da API estão em inglês. As mais comuns:
 | `The title field is required.` | Faltou o título da tarefa |
 | `The selected status is invalid.` | Status inexistente, ou tentativa de usar `deleted` (use o `DELETE`) |
 | `These credentials do not match our records.` | E-mail ou senha incorretos no login |
-| `The email has already been taken.` | Já existe uma conta com esse e-mail |
-| `The email field must be lowercase.` | O e-mail do cadastro tem letras maiúsculas |
-| `The password field must be at least 8 characters.` | Senha com menos de 8 caracteres |
-| `The password field confirmation does not match.` | `password` e `password_confirmation` diferentes |
+| `The email field is required.` / `The password field is required.` | Faltou o e-mail ou a senha no login |
 
 ---
 
@@ -462,6 +516,7 @@ Apagar **todos os dados** (usuários e tarefas) e começar do zero:
 docker compose down -v
 docker compose up -d
 docker compose exec app php artisan migrate
+docker compose exec app php artisan db:seed
 ```
 
 ---
@@ -473,11 +528,14 @@ docker compose exec app php artisan migrate
 docker compose up -d
 curl http://localhost:8000/api/health
 
-# Login (guarda o token)
+# Login como Dario, super-admin (guarda o token)
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Accept: application/json' -H 'Content-Type: application/json' \
-  -d '{"email": "ana@example.com", "password": "senha-segura"}' \
+  -d '{"email": "dario@example.com", "password": "password"}' \
   | python3 -c 'import sys, json; print(json.load(sys.stdin)["token"])')
+
+# Quem sou eu e o que posso fazer (com a função api do passo 3.4)
+api GET /auth/me
 
 # Tarefas (com a função api do passo 3.4)
 api POST   /tasks -d '{"title": "Nova tarefa"}'    # criar
@@ -499,6 +557,7 @@ api POST /auth/logout
 | `201` | Criado com sucesso |
 | `204` | Sucesso, sem conteúdo na resposta |
 | `401` | Sem token ou token inválido |
+| `403` | Sem permissão para a operação |
 | `404` | Não encontrado (ou na lixeira) |
 | `422` | Dados inválidos; veja `errors` |
 | `429` | Muitas tentativas; aguarde um minuto |

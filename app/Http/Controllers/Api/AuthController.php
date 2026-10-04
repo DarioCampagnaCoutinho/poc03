@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
-use App\Http\Requests\RegisterRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -14,16 +13,6 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    /**
-     * Cadastra um usuário e retorna um token de acesso.
-     */
-    public function register(RegisterRequest $request): UserResource
-    {
-        $user = User::create($request->safe()->only(['name', 'email', 'password']));
-
-        return $this->withToken($user, $request->validated('device_name', 'api'));
-    }
-
     /**
      * Troca e-mail e senha por um token de acesso.
      */

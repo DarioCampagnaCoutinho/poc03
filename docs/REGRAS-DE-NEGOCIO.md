@@ -1,60 +1,98 @@
 # Regras de negócio
 
-## RN01 — Tarefas compartilhadas entre usuários logados
+| Código | Regra |
+|---|---|
+| [RN01](#rn01--tarefas-compartilhadas-sem-dono) | Tarefas compartilhadas, sem dono |
+| [RN02](#rn02--login-obrigatório-e-permissão-por-operação) | Login obrigatório e permissão por operação |
+| [RN03](#rn03--só-o-administrador-cria-usuários) | Só o administrador cria usuários |
 
-> **Para usar as tarefas é obrigatório estar logado. Depois de logado, o usuário vê e altera todas as tarefas, de todos os usuários.**
+---
 
-- Sem login (sem token, com token inválido ou com token revogado no logout), **nenhuma** operação com tarefas é permitida.
-- Com login, **qualquer** usuário pode listar, consultar, criar, alterar, excluir e restaurar **qualquer** tarefa, inclusive as criadas por outras pessoas.
-- As tarefas **não têm dono**: a API não registra nem verifica quem criou cada tarefa.
+## RN01 — Tarefas compartilhadas, sem dono
+
+> **As tarefas não têm dono. Quem tem a permissão de uma operação pode realizá-la em qualquer tarefa, inclusive nas criadas por outros usuários.**
+
+- A API não registra nem verifica quem criou cada tarefa.
+- Uma usuária com permissão de alterar tarefas altera as tarefas de todos, não só as que ela criou.
+
+---
+
+## RN02 — Login obrigatório e permissão por operação
+
+> **Para usar as tarefas é obrigatório estar logado e ter a permissão da operação. O super-admin pode tudo.**
+
+- Sem login (sem token, com token inválido ou revogado no logout), **nenhuma** operação com tarefas é permitida: `401`.
+- Logado, cada operação exige uma **permissão**. Sem ela: `403`.
+- As permissões são agrupadas em **grupos (papéis)**. Um usuário pode estar em vários grupos e também receber permissões **diretamente**.
+- O grupo `super-admin` pode tudo, sem precisar receber permissões.
+- Qualquer usuário pode fazer login e consultar os próprios dados (`/api/auth/me`), mesmo sem nenhuma permissão.
+
+### Permissões
+
+| Permissão | Libera |
+|---|---|
+| `tasks.view` | Listar, consultar e ver a lixeira |
+| `tasks.create` | Criar tarefas |
+| `tasks.update` | Alterar título, descrição e status |
+| `tasks.delete` | Excluir (enviar para a lixeira) |
+| `tasks.restore` | Restaurar da lixeira |
+
+### Grupos (papéis) e usuários
+
+| Grupo | Permissões | Usuários de desenvolvimento |
+|---|---|---|
+| `super-admin` | Todas | Dario |
+| `editor` | Todas as permissões de tarefas | — |
+| `leitor` | `tasks.view` | Maria, Ana |
 
 ### Como a API decide
 
 ```mermaid
 flowchart TD
     REQ["Requisição para /api/tasks<br/>listar, consultar, criar, alterar, excluir ou restaurar"]
-    TOKEN{"Enviou o header<br/>Authorization: Bearer?"}
-    VALIDO{"O token é válido?<br/>existe e não foi revogado no logout"}
-    NEGADO["401 Unauthenticated<br/>nenhuma operação é permitida"]
-    LIBERADO["Acesso liberado a TODAS as tarefas,<br/>de todos os usuários"]
-    NOTA["Não existe verificação de dono:<br/>a API não pergunta quem criou a tarefa"]
+    TOKEN{"Enviou um token válido?<br/>existe e não foi revogado no logout"}
+    ADMIN{"Está no grupo<br/>super-admin?"}
+    PERM{"Tem a permissão da operação?<br/>direta ou herdada de um grupo"}
+    E401["401 Unauthenticated<br/>a API não sabe quem você é"]
+    E403["403 Forbidden<br/>a API sabe quem você é,<br/>mas você não tem permissão"]
+    OK["Operação liberada<br/>em qualquer tarefa, de qualquer usuário (RN01)"]
 
     REQ --> TOKEN
-    TOKEN -- Não --> NEGADO
-    TOKEN -- Sim --> VALIDO
-    VALIDO -- Não --> NEGADO
-    VALIDO -- Sim --> LIBERADO
-    LIBERADO -.- NOTA
+    TOKEN -- Não --> E401
+    TOKEN -- Sim --> ADMIN
+    ADMIN -- Sim --> OK
+    ADMIN -- Não --> PERM
+    PERM -- Não --> E403
+    PERM -- Sim --> OK
 
     classDef negado fill:#fdecea,stroke:#c0392b,color:#7b241c
     classDef liberado fill:#e8f6ec,stroke:#1e8449,color:#145a32
-    classDef nota fill:#fff8e1,stroke:#b7950b,color:#7d6608,stroke-dasharray: 4 3
-    class NEGADO negado
-    class LIBERADO liberado
-    class NOTA nota
+    class E401,E403 negado
+    class OK liberado
 ```
 
-### Exemplo com dois usuários
+### Exemplo
 
-A Ana cria uma tarefa. O Bruno, logado com a própria conta, enxerga e altera essa tarefa normalmente. Um visitante sem login é bloqueado.
+O Dario (`super-admin`) cria uma tarefa. A Maria (`leitor`) vê essa tarefa, mas não consegue alterá-la, até o administrador colocá-la no grupo `editor`. Um visitante sem login é bloqueado.
 
 ```mermaid
 sequenceDiagram
-    actor Ana
-    actor Bruno
+    actor Dario as Dario (super-admin)
+    actor Maria as Maria (leitor)
     participant API as API de tarefas
     actor Visitante as Visitante (sem login)
 
-    Ana->>API: POST /api/tasks (token da Ana)
-    API-->>Ana: 201 tarefa 1 criada
+    Dario->>API: POST /api/tasks
+    API-->>Dario: 201 tarefa 1 criada
 
-    Note over Bruno,API: Bruno é outro usuário, logado com o próprio token
-    Bruno->>API: GET /api/tasks
-    API-->>Bruno: 200 a lista inclui a tarefa 1 da Ana
-    Bruno->>API: PATCH /api/tasks/1 (status completed)
-    API-->>Bruno: 200 tarefa da Ana alterada
-    Bruno->>API: DELETE /api/tasks/1
-    API-->>Bruno: 204 tarefa da Ana enviada para a lixeira
+    Maria->>API: GET /api/tasks
+    API-->>Maria: 200 a lista inclui a tarefa 1 do Dario
+    Maria->>API: PATCH /api/tasks/1
+    API-->>Maria: 403 sem a permissão tasks.update
+
+    Note over Dario,API: O administrador coloca a Maria no grupo editor
+    Maria->>API: PATCH /api/tasks/1 (mesmo token)
+    API-->>Maria: 200 tarefa do Dario alterada
 
     Visitante->>API: GET /api/tasks (sem token)
     API-->>Visitante: 401 Unauthenticated
@@ -62,19 +100,33 @@ sequenceDiagram
 
 ### Quem pode fazer o quê
 
-| Operação | Sem login | Logado (qualquer usuário) |
-|---|---|---|
-| Listar tarefas (inclusive a lixeira) | ❌ `401` | ✅ todas as tarefas |
-| Consultar uma tarefa | ❌ `401` | ✅ qualquer tarefa |
-| Criar tarefa | ❌ `401` | ✅ |
-| Alterar título, descrição ou status | ❌ `401` | ✅ qualquer tarefa |
-| Excluir (enviar para a lixeira) | ❌ `401` | ✅ qualquer tarefa |
-| Restaurar da lixeira | ❌ `401` | ✅ qualquer tarefa |
+| Operação | Permissão | Sem login | `leitor` | `editor` | `super-admin` |
+|---|---|---|---|---|---|
+| Fazer login e ver os próprios dados | — | ✅ login | ✅ | ✅ | ✅ |
+| Listar, consultar e ver a lixeira | `tasks.view` | ❌ `401` | ✅ | ✅ | ✅ |
+| Criar | `tasks.create` | ❌ `401` | ❌ `403` | ✅ | ✅ |
+| Alterar | `tasks.update` | ❌ `401` | ❌ `403` | ✅ | ✅ |
+| Excluir | `tasks.delete` | ❌ `401` | ❌ `403` | ✅ | ✅ |
+| Restaurar | `tasks.restore` | ❌ `401` | ❌ `403` | ✅ | ✅ |
 
-### Onde a regra está implementada
+---
 
-| Parte da regra | Implementação |
+## RN03 — Só o administrador cria usuários
+
+> **Não existe cadastro público. Os usuários são criados pelo administrador, que também define seus grupos e permissões.**
+
+- Por enquanto, os usuários são criados pelo seeder (ambiente de desenvolvimento) ou pelo Tinker. Os endpoints de administração ficam para uma próxima etapa.
+- A antiga rota `POST /api/auth/register` não existe mais (`404`).
+
+---
+
+## Onde as regras estão implementadas
+
+| Regra | Implementação |
 |---|---|
-| Exigir login | Middleware `auth:sanctum` em todas as rotas de tarefas ([`routes/api.php`](../routes/api.php)) |
-| Acesso a todas as tarefas | O `TaskController` consulta as tarefas sem filtrar por usuário, e a tabela `tasks` não tem coluna de dono |
-| Testes | `TaskApiTest::test_routes_require_authentication` verifica o `401` em cada uma das 6 rotas de tarefas |
+| RN01: tarefas sem dono | A tabela `tasks` não tem coluna de dono, e o `TaskController` consulta as tarefas sem filtrar por usuário |
+| RN02: login obrigatório | Middleware `auth:sanctum` nas rotas de tarefas ([`routes/api.php`](../routes/api.php)) |
+| RN02: permissão por operação | `TaskController::middleware()` exige `can:tasks.*` em cada ação; grupos e permissões criados pelo `RolePermissionSeeder` |
+| RN02: super-admin | `Gate::before` no `AppServiceProvider` |
+| RN03: sem cadastro público | Não há rota de cadastro; usuários criados pelo `UserSeeder` ou pelo Tinker |
+| Testes | `TaskApiTest` (401 em cada rota), `TaskAuthorizationTest` (403, leitor, permissão direta e super-admin), `AuthApiTest::test_public_registration_is_disabled` e `DatabaseSeederTest` |

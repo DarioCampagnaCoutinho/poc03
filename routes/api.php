@@ -9,13 +9,12 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthCheckController::class);
 
-// Até 10 tentativas por minuto por IP (proteção contra força bruta).
-Route::middleware('throttle:10,1')->group(function () {
-    Route::post('/auth/register', [AuthController::class, 'register']);
-    Route::post('/auth/login', [AuthController::class, 'login']);
-});
+// Até 10 tentativas de login por minuto por IP (proteção contra força bruta).
+// Não há cadastro público: os usuários são criados pelo administrador.
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
-// Rotas autenticadas (header Authorization: Bearer <token>)
+// Rotas autenticadas (header Authorization: Bearer <token>).
+// As rotas de tarefas também exigem permissão (ver TaskController::middleware).
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);

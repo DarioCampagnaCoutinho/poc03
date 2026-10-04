@@ -16,6 +16,7 @@ O projeto está sendo construído por etapas; o histórico do que já foi entreg
 | Symfony (componentes) | 7.4 | Resolvido para manter compatibilidade com PHP 8.3 |
 | PostgreSQL | 18.6 | Imagem `postgres:18-alpine` |
 | Laravel Sanctum | 4.3.3 | Autenticação da API por token (`Authorization: Bearer`) |
+| spatie/laravel-permission | 8.3.0 | Autorização com papéis (grupos) e permissões |
 | Composer | 2.10.3 | Copiado da imagem `composer:2` |
 | Nginx | 1.31.6 | Imagem `nginx:alpine` |
 | PHPUnit | 12.5.37 | Testes |
@@ -128,29 +129,40 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   │   └── TaskStatus.php              # Enum de status da tarefa
 │   ├── Http/
 │   │   ├── Controllers/Api/
-│   │   │   ├── AuthController.php          # Cadastro, login, logout e usuário autenticado
+│   │   │   ├── AuthController.php          # Login, logout e usuário autenticado
 │   │   │   ├── HealthCheckController.php   # GET /api/health (PHP, Nginx e PostgreSQL)
-│   │   │   └── TaskController.php          # CRUD /api/tasks + restore
+│   │   │   └── TaskController.php          # CRUD /api/tasks + restore, com a permissão de cada ação
 │   │   ├── Requests/
 │   │   │   ├── LoginRequest.php            # Validação do login
-│   │   │   ├── RegisterRequest.php         # Validação do cadastro
 │   │   │   ├── StoreTaskRequest.php        # Validação da criação de tarefa
 │   │   │   └── UpdateTaskRequest.php       # Validação da atualização de tarefa
 │   │   └── Resources/
 │   │       ├── TaskResource.php            # Formato JSON da tarefa
 │   │       └── UserResource.php            # Formato JSON do usuário
-│   └── Models/
-│       ├── Task.php                    # Model Task (soft delete + sincronização de status)
-│       └── User.php                    # Model User (HasApiTokens do Sanctum)
+│   ├── Models/
+│   │   ├── Task.php                    # Model Task (soft delete + sincronização de status)
+│   │   └── User.php                    # Model User (HasApiTokens do Sanctum + HasRoles da Spatie)
+│   └── Providers/
+│       └── AppServiceProvider.php      # Gate::before: super-admin passa em todas as permissões
+├── config/
+│   └── permission.php                  # Configuração da Spatie (publicada)
 ├── database/
 │   ├── factories/TaskFactory.php
-│   └── migrations/…_create_tasks_table.php
+│   ├── migrations/
+│   │   ├── …_create_tasks_table.php
+│   │   └── …_create_permission_tables.php   # Papéis e permissões (Spatie)
+│   └── seeders/
+│       ├── DatabaseSeeder.php
+│       ├── RolePermissionSeeder.php    # Permissões e papéis (super-admin, editor, leitor)
+│       └── UserSeeder.php              # Usuários de desenvolvimento (Dario, Maria, Ana)
 ├── routes/
 │   └── api.php                         # Rotas da API (prefixo /api)
 └── tests/Feature/
     ├── AuthApiTest.php                 # Testes das rotas de autenticação
+    ├── DatabaseSeederTest.php          # Testes dos seeders (papéis, permissões e usuários)
     ├── HealthCheckTest.php             # Testes do health check
     ├── TaskApiTest.php                 # Testes das rotas de tarefas
+    ├── TaskAuthorizationTest.php       # Testes das permissões nas rotas de tarefas
     └── TaskTest.php                    # Testes do model Task
 ```
 
@@ -183,7 +195,7 @@ docker compose exec app php artisan key:generate
 # 5. Migrations no PostgreSQL
 docker compose exec app php artisan migrate
 
-# 6. (Opcional) Usuário de teste: test@example.com / password
+# 6. Papéis, permissões e usuários de desenvolvimento (veja "Autorização")
 docker compose exec app php artisan db:seed
 ```
 
@@ -204,23 +216,24 @@ docker compose logs -f      # acompanhar os logs
 
 Todas as rotas da API ficam sob o prefixo `/api`.
 
-| Método | Rota | Descrição | Autenticação |
+| Método | Rota | Descrição | Acesso |
 |---|---|---|---|
-| `POST` | `/api/auth/register` | Cadastra um usuário e retorna um token | Não |
-| `POST` | `/api/auth/login` | Troca e-mail e senha por um token | Não |
-| `GET` | `/api/auth/me` | Retorna o usuário autenticado | Token |
+| `POST` | `/api/auth/login` | Troca e-mail e senha por um token | Público |
+| `GET` | `/api/auth/me` | Retorna o usuário autenticado, com papéis e permissões | Token |
 | `POST` | `/api/auth/logout` | Revoga o token usado na requisição | Token |
-| `GET` | `/api/tasks` | Lista as tarefas (paginado, filtro por status) | Token |
-| `POST` | `/api/tasks` | Cria uma tarefa | Token |
-| `GET` | `/api/tasks/{id}` | Exibe uma tarefa | Token |
-| `PUT/PATCH` | `/api/tasks/{id}` | Atualiza uma tarefa | Token |
-| `DELETE` | `/api/tasks/{id}` | Exclui uma tarefa (soft delete) | Token |
-| `POST` | `/api/tasks/{id}/restore` | Restaura uma tarefa excluída | Token |
-| `GET` | `/api/health` | Verifica PHP, Nginx e PostgreSQL | Não |
-| `GET` | `/up` | Health check padrão do Laravel | Não |
-| `GET` | `/nginx-health` | Health check do Nginx (não passa pelo PHP) | Não |
+| `GET` | `/api/tasks` | Lista as tarefas (paginado, filtro por status) | Token + `tasks.view` |
+| `POST` | `/api/tasks` | Cria uma tarefa | Token + `tasks.create` |
+| `GET` | `/api/tasks/{id}` | Exibe uma tarefa | Token + `tasks.view` |
+| `PUT/PATCH` | `/api/tasks/{id}` | Atualiza uma tarefa | Token + `tasks.update` |
+| `DELETE` | `/api/tasks/{id}` | Exclui uma tarefa (soft delete) | Token + `tasks.delete` |
+| `POST` | `/api/tasks/{id}/restore` | Restaura uma tarefa excluída | Token + `tasks.restore` |
+| `GET` | `/api/health` | Verifica PHP, Nginx e PostgreSQL | Público |
+| `GET` | `/up` | Health check padrão do Laravel | Público |
+| `GET` | `/nginx-health` | Health check do Nginx (não passa pelo PHP) | Público |
 
-"Token" = header `Authorization: Bearer <token>`, obtido no cadastro ou no login. Sem token (ou com um token revogado), a API responde `401 {"message": "Unauthenticated."}`.
+- **Token** = header `Authorization: Bearer <token>`, obtido no login. Sem token (ou com um token revogado), a API responde `401 {"message": "Unauthenticated."}`.
+- **`tasks.*`** = permissão exigida (veja [Autorização](#autorização-papéis-e-permissões)). Logado, mas sem a permissão, a API responde `403 {"message": "This action is unauthorized."}`.
+- Não há cadastro público: os usuários são criados pelo administrador.
 
 ### Autenticação (`/api/auth`)
 
@@ -228,60 +241,58 @@ A autenticação usa os **tokens de API do Laravel Sanctum**: o cliente troca e-
 
 **Fluxo**
 
-1. `POST /api/auth/register` (cadastro) ou `POST /api/auth/login` → resposta com o `token`.
+1. `POST /api/auth/login` → resposta com o `token`.
 2. Enviar `Authorization: Bearer <token>` nas rotas protegidas.
 3. `POST /api/auth/logout` → revoga aquele token (os outros tokens do usuário continuam válidos).
 
-**Campos aceitos**
+Não existe cadastro público: os usuários são criados pelo administrador. Por enquanto isso é feito pelo seeder ou pelo Tinker (veja [Autorização](#autorização-papéis-e-permissões)); os endpoints de administração ficam para uma próxima etapa.
 
-| Rota | Campo | Regras |
-|---|---|---|
-| `register` | `name` | Obrigatório, até 255 caracteres |
-| `register` | `email` | Obrigatório, e-mail válido, minúsculo e único |
-| `register` | `password` / `password_confirmation` | Obrigatórios, mínimo de 8 caracteres e iguais |
-| `login` | `email` / `password` | Obrigatórios |
-| `register` e `login` | `device_name` | Opcional (padrão `api`). Nome que identifica o token, ex.: "iPhone da Maria" |
+**Campos aceitos no login**
 
-**Resposta do cadastro (`201`) e do login (`200`)**
+| Campo | Regras |
+|---|---|
+| `email` / `password` | Obrigatórios |
+| `device_name` | Opcional (padrão `api`). Nome que identifica o token, ex.: "iPhone da Maria" |
+
+**Resposta do login (`200`)**
 
 ```json
 {
   "data": {
-    "id": 1,
+    "id": 2,
     "name": "Maria",
     "email": "maria@example.com",
     "email_verified_at": null,
-    "created_at": "2026-10-04T15:20:11.000000Z",
-    "updated_at": "2026-10-04T15:20:11.000000Z"
+    "roles": ["leitor"],
+    "permissions": ["tasks.view"],
+    "created_at": "2026-10-04T20:25:47.000000Z",
+    "updated_at": "2026-10-04T20:25:47.000000Z"
   },
   "token": "1|Xq3m...",
   "token_type": "Bearer"
 }
 ```
 
-O token só é exibido nesse momento; no banco (`personal_access_tokens`) fica apenas o hash SHA-256.
+- `roles`: papéis (grupos) do usuário.
+- `permissions`: permissões efetivas, diretas e herdadas dos papéis. Para o `super-admin`, aparecem todas.
+- O token só é exibido nesse momento; no banco (`personal_access_tokens`) fica apenas o hash SHA-256.
 
 **Respostas de erro**
 
 | Situação | HTTP |
 |---|---|
-| Dados inválidos ou e-mail já cadastrado | `422 Unprocessable Content` |
+| Campos ausentes ou inválidos | `422 Unprocessable Content` |
 | E-mail ou senha incorretos (erro no campo `email`, como na documentação do Sanctum) | `422 Unprocessable Content` |
 | Sem token, token inválido ou revogado | `401 Unauthorized` |
-| Mais de 10 tentativas de cadastro/login por minuto no mesmo IP | `429 Too Many Requests` |
+| Mais de 10 tentativas de login por minuto no mesmo IP | `429 Too Many Requests` |
 
 **Exemplos**
 
 ```bash
-# Cadastrar
-curl -X POST http://localhost:8000/api/auth/register \
-  -H 'Accept: application/json' -H 'Content-Type: application/json' \
-  -d '{"name": "Maria", "email": "maria@example.com", "password": "password", "password_confirmation": "password"}'
-
-# Login (guarda o token em uma variável do shell)
+# Login como Dario, super-admin (guarda o token em uma variável do shell)
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Accept: application/json' -H 'Content-Type: application/json' \
-  -d '{"email": "maria@example.com", "password": "password"}' | python3 -c 'import sys, json; print(json.load(sys.stdin)["token"])')
+  -d '{"email": "dario@example.com", "password": "password"}' | python3 -c 'import sys, json; print(json.load(sys.stdin)["token"])')
 
 # Usuário autenticado
 curl -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/auth/me
@@ -290,11 +301,64 @@ curl -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" http://loca
 curl -X POST -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/auth/logout
 ```
 
+### Autorização (papéis e permissões)
+
+A autorização usa o pacote **spatie/laravel-permission**. Cada operação de tarefa exige uma **permissão**; as permissões são agrupadas em **papéis** (os "grupos").
+
+**Permissões**
+
+| Permissão | Libera |
+|---|---|
+| `tasks.view` | Listar, consultar e ver a lixeira |
+| `tasks.create` | Criar tarefas |
+| `tasks.update` | Alterar título, descrição e status |
+| `tasks.delete` | Excluir (enviar para a lixeira) |
+| `tasks.restore` | Restaurar da lixeira |
+
+**Papéis (grupos)**
+
+| Papel | Permissões |
+|---|---|
+| `super-admin` | Todas, sem precisar atribuí-las (regra `Gate::before` no `AppServiceProvider`) |
+| `editor` | Todas as permissões de tarefas |
+| `leitor` | `tasks.view` |
+
+**Usuários de desenvolvimento** (criados por `php artisan db:seed`, senha `password`)
+
+| Usuário | E-mail | Papel | Pode |
+|---|---|---|---|
+| Dario | `dario@example.com` | `super-admin` | Tudo |
+| Maria | `maria@example.com` | `leitor` | Fazer login e visualizar tarefas |
+| Ana | `ana@example.com` | `leitor` | Fazer login e visualizar tarefas |
+
+Qualquer usuário pode fazer login e consultar `/api/auth/me`; o que ele pode fazer com as tarefas depende das permissões. Um usuário pode ter vários papéis e também permissões atribuídas **diretamente**, além das que vêm dos papéis.
+
+**Gerenciar acessos (por enquanto, pelo Tinker)**
+
+```bash
+docker compose exec app php artisan tinker
+```
+
+```php
+$ana = App\Models\User::firstWhere('email', 'ana@example.com');
+
+$ana->assignRole('editor');                 // coloca a Ana no grupo "editor"
+$ana->removeRole('leitor');                 // tira a Ana do grupo "leitor"
+$ana->givePermissionTo('tasks.create');     // permissão direta, sem mudar o grupo
+$ana->revokePermissionTo('tasks.create');   // remove a permissão direta
+
+// Criar um usuário (não há cadastro público)
+App\Models\User::create(['name' => 'João', 'email' => 'joao@example.com', 'password' => 'password'])
+    ->assignRole('leitor');
+```
+
+As mudanças valem na próxima requisição do usuário, sem precisar de um novo login.
+
 ### Tarefas (`/api/tasks`)
 
-Todas as rotas de tarefas exigem o header `Authorization: Bearer <token>` (veja [Autenticação](#autenticação-apiauth)). Envie também `Accept: application/json` para receber erros de validação em JSON.
+Todas as rotas de tarefas exigem o header `Authorization: Bearer <token>` (veja [Autenticação](#autenticação-apiauth)) e a permissão da operação (veja [Autorização](#autorização-papéis-e-permissões)). Envie também `Accept: application/json` para receber erros de validação em JSON.
 
-**Regra de negócio:** as tarefas são **compartilhadas**. Basta estar logado para ver, criar, alterar, excluir e restaurar qualquer tarefa, inclusive as criadas por outros usuários. As tarefas não têm dono. Veja os diagramas em [Regras de negócio](docs/REGRAS-DE-NEGOCIO.md).
+**Regras de negócio:** as tarefas são **compartilhadas** e não têm dono: quem tem a permissão de uma operação pode realizá-la em qualquer tarefa, inclusive nas criadas por outros usuários. Veja os diagramas em [Regras de negócio](docs/REGRAS-DE-NEGOCIO.md).
 
 **Formato de uma tarefa**
 
@@ -341,6 +405,7 @@ Sem filtro, a listagem traz só as tarefas ativas, da mais recente para a mais a
 | Consulta, atualização ou restauração | `200 OK` |
 | Exclusão | `204 No Content` |
 | Sem token, token inválido ou revogado | `401 Unauthorized` |
+| Logado, mas sem a permissão da operação | `403 Forbidden` |
 | Tarefa inexistente ou excluída (em `GET`, `PUT/PATCH` e `DELETE`) | `404 Not Found` |
 | Dados inválidos | `422 Unprocessable Content` |
 
@@ -417,25 +482,31 @@ A pasta [`api-rest/`](api-rest/) traz as coleções prontas para importar no Pos
 
 | Coleção | Arquivo | Requisições |
 |---|---|---|
-| POC 03 - Auth | `api-rest/auth/auth.postman_collection.json` | Cadastro, usuário autenticado, logout, login e exemplos de erro (401 e 422) |
+| POC 03 - Auth | `api-rest/auth/auth.postman_collection.json` | Login (Dario e Maria), usuário autenticado com papéis e permissões, logout e exemplos de erro (401, 404 e 422) |
 | POC 03 - Health | `api-rest/health/health.postman_collection.json` | Health check de PHP, Nginx e PostgreSQL |
-| POC 03 - Task | `api-rest/task/task.postman_collection.json` | CRUD completo de tarefas, lixeira, restauração e exemplos de erro (401 e 422) |
+| POC 03 - Task | `api-rest/task/task.postman_collection.json` | CRUD completo de tarefas, lixeira, restauração e exemplos de erro (401, 403 e 422) |
 
 **Importar:** no Postman, clique em **Import** e arraste a pasta `api-rest` (ou os três arquivos `.json`).
 
-**Autenticação no Postman:** execute **"Registrar usuário"** ou **"Login"** da coleção *POC 03 - Auth* antes de usar a coleção *POC 03 - Task*. O token retornado é salvo na variável **global** `token` (visível em *Environments → Globals*) e enviado automaticamente como `Authorization: Bearer {{token}}` pelas coleções Auth e Task.
+**Antes de usar:** rode `docker compose exec app php artisan db:seed` para criar os usuários de desenvolvimento.
+
+**Autenticação no Postman:** execute **"Login"** da coleção *POC 03 - Auth* antes de usar a coleção *POC 03 - Task*. Por padrão ele entra como **Dario** (`super-admin`), que pode tudo. O token retornado é salvo na variável **global** `token` (visível em *Environments → Globals*) e enviado automaticamente como `Authorization: Bearer {{token}}` pelas coleções Auth e Task.
+
+As últimas requisições da coleção Task entram como **Maria** (`leitor`) e mostram a autorização funcionando: ela lista as tarefas (200), mas não consegue criar (403).
 
 **Variáveis**
 
 | Variável | Onde | Padrão | Uso |
 |---|---|---|---|
-| `token` | Global | — | Preenchida por "Registrar usuário" e "Login" |
+| `token` | Global | — | Preenchida por "Login" |
 | `base_url` | Cada coleção | `http://localhost:8000` | Endereço da API |
-| `email` | Auth | `test@example.com` | Substituída por um e-mail único a cada "Registrar usuário" |
-| `password` | Auth | `password` | Senha usada no cadastro e no login |
+| `email` | Auth | `dario@example.com` | Usuário do "Login" |
+| `password` | Auth e Task | `password` | Senha dos usuários de desenvolvimento |
+| `reader_email` | Auth e Task | `maria@example.com` | Usuária leitora dos exemplos de permissão |
+| `reader_token` | Auth e Task | — | Preenchida por "Login como leitora (Maria)" |
 | `task_id` | Task | `1` | Preenchida automaticamente pela requisição "Criar tarefa" |
 
-Para fazer login com o usuário de teste (`test@example.com`), rode antes `docker compose exec app php artisan db:seed`.
+Para testar com outro usuário, troque o `email` na aba *Variables* da coleção Auth e rode "Login" de novo.
 
 As requisições de cada coleção estão na ordem de um fluxo completo e todas têm testes. Dá para executar tudo de uma vez pelo **Collection Runner** ou pelo Newman, sem instalar nada além do Docker. Como o Newman roda cada coleção separadamente, o token é passado de uma execução para a outra por um arquivo de variáveis globais:
 
@@ -447,7 +518,7 @@ newman task/task.postman_collection.json --globals globals.json
 rm api-rest/globals.json
 ```
 
-> Executar as coleções Auth e Task cria um usuário e uma tarefa no banco de desenvolvimento.
+> Executar a coleção Task cria uma tarefa no banco de desenvolvimento.
 
 ---
 
@@ -558,8 +629,21 @@ docker compose exec app bash
 - [x] `docs/TUTORIAL.md`: passo a passo do ambiente ao ciclo completo de uma tarefa, pelo terminal (`curl`) e pelo Postman, com solução de problemas comuns
 - [x] Comandos do tutorial validados contra a API rodando, no zsh
 
+### Etapa 10 — Autorização com papéis e permissões (Spatie) ✅
+
+- [x] Pacote `spatie/laravel-permission` 8.3 instalado (config e migration publicadas)
+- [x] Permissões por operação: `tasks.view`, `tasks.create`, `tasks.update`, `tasks.delete`, `tasks.restore`
+- [x] Papéis (grupos): `super-admin` (tudo, via `Gate::before`), `editor` (todas as permissões de tarefas) e `leitor` (`tasks.view`)
+- [x] `TaskController` exige a permissão de cada ação (`can:` middleware); sem permissão, a API responde 403
+- [x] Cadastro público removido: só o administrador cria usuários
+- [x] Seeders com os papéis, as permissões e os usuários Dario (`super-admin`), Maria e Ana (`leitor`)
+- [x] `/api/auth/me` e o login retornam os papéis (`roles`) e as permissões efetivas (`permissions`) do usuário
+- [x] Testes de autorização (`TaskAuthorizationTest`) e dos seeders (`DatabaseSeederTest`)
+- [x] Coleções do Postman atualizadas (login do Dario, exemplos com a Maria) e validadas com o Newman
+
 ### Pendências conhecidas
 
+- Endpoints de administração (criar usuários, gerenciar papéis e permissões) ainda não existem; por enquanto isso é feito pelo seeder ou pelo Tinker.
 - Os tokens não expiram (`expiration` = `null` em `config/sanctum.php`, padrão do Sanctum); só deixam de valer no logout.
 - A fila usa o driver `database`, mas ainda não há um container de worker (`queue:work`).
 - As mensagens de validação estão em inglês (`APP_LOCALE=en`).
@@ -578,6 +662,11 @@ docker compose exec app bash
 - **Tokens de API em vez de autenticação por cookie (SPA):** a API é consumida por clientes externos (Postman, apps), então foi usado o fluxo de tokens do Sanctum, como na seção *Mobile Application Authentication* da documentação. O modo SPA (cookies + CSRF) não foi habilitado.
 - **Visitantes sem redirecionamento:** por padrão o Laravel redireciona usuários não autenticados para a rota `login`, que não existe nesta API. Em `bootstrap/app.php`, `redirectGuestsTo` foi configurado para que rotas `api/*` sempre respondam 401.
 - **Token global no Postman:** o token é salvo como variável global para ser compartilhado entre as coleções Auth e Task sem exigir a seleção de um ambiente.
+- **Autorização por permissão, não por papel:** as rotas verificam permissões (`can:tasks.create`), nunca papéis. Assim, os papéis podem mudar livremente, e uma permissão pode ser dada a um usuário sem mudar o grupo dele.
+- **Super-admin via `Gate::before`:** como recomenda a documentação da Spatie, o papel `super-admin` não recebe permissões; uma regra no `AppServiceProvider` libera tudo para ele. Permissões novas passam a valer para o super-admin automaticamente.
+- **Permissões checadas no controller:** o `TaskController` declara, via `HasMiddleware`, a permissão de cada ação. As rotas continuam com `Route::apiResource`, e o mapeamento ação → permissão fica num lugar só.
+- **403 x 401:** `401` significa "não sei quem você é" (sem token ou token inválido); `403` significa "sei quem você é, mas você não tem permissão".
+- **Seeder sem `WithoutModelEvents`:** a Spatie usa os eventos dos models para limpar o cache de permissões; com os eventos desligados, o cache poderia ficar desatualizado durante o seed.
 
 ---
 

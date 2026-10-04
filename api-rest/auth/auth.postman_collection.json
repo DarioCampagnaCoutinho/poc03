@@ -1,195 +1,10 @@
 {
   "info": {
     "name": "POC 03 - Auth",
-    "description": "Autenticação da POC 03 com tokens de API do Laravel Sanctum.\n\nO token retornado por \"Registrar usuário\" e \"Login\" é salvo na variável **global** `token` e enviado como `Authorization: Bearer {{token}}` pelas coleções Auth e Task.\n\nVariáveis da coleção:\n- `base_url`: endereço da API (padrão `http://localhost:8000`)\n- `email`: preenchida automaticamente por \"Registrar usuário\" (padrão `test@example.com`, o usuário criado por `php artisan db:seed`)\n- `password`: senha usada no cadastro e no login (padrão `password`)\n\nAs requisições estão na ordem de um fluxo completo e podem ser executadas em sequência pelo Collection Runner.",
+    "description": "Autenticação da POC 03 com tokens de API do Laravel Sanctum.\n\nO token retornado por \"Login\" é salvo na variável **global** `token` e enviado como `Authorization: Bearer {{token}}` pelas coleções Auth e Task.\n\nUsuários de desenvolvimento (criados por `php artisan db:seed`, senha `password`):\n- `dario@example.com`: papel `super-admin` (acesso total)\n- `maria@example.com` e `ana@example.com`: papel `leitor` (só visualizam tarefas)\n\nVariáveis da coleção:\n- `base_url`: endereço da API (padrão `http://localhost:8000`)\n- `email` / `password`: usuário do \"Login\" (padrão Dario)\n- `reader_email`: usuária leitora (padrão Maria)\n- `reader_token`: preenchida por \"Login como leitora (Maria)\"\n\nAs requisições estão na ordem de um fluxo completo e podem ser executadas em sequência pelo Collection Runner.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
-    {
-      "name": "Registrar usuário",
-      "event": [
-        {
-          "listen": "prerequest",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "// Gera um e-mail único a cada execução e o guarda para o login",
-              "pm.collectionVariables.set('email', `usuario.${Date.now()}@example.com`);"
-            ]
-          }
-        },
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
-              "",
-              "if (pm.response.code < 300) {",
-              "    const json = pm.response.json();",
-              "    pm.test('Retorna um token Bearer', () => {",
-              "        pm.expect(json.token).to.be.a('string').and.not.empty;",
-              "        pm.expect(json.token_type).to.eql('Bearer');",
-              "    });",
-              "",
-              "    // Variável global: usada pelas coleções Auth e Task",
-              "    pm.globals.set('token', json.token);",
-              "}"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Accept",
-            "value": "application/json"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": {
-          "raw": "{{base_url}}/api/auth/register",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "auth",
-            "register"
-          ]
-        },
-        "description": "Cadastra um usuário e retorna um token de acesso.\n\nO script de pré-requisição gera um e-mail único (variável `email`), usado depois pelo login. O token é salvo na variável **global** `token`, usada pelas coleções Auth e Task.",
-        "auth": {
-          "type": "noauth"
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"name\": \"Usuário POC\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"password_confirmation\": \"{{password}}\",\n  \"device_name\": \"postman\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "Usuário autenticado",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
-              "pm.test('Retorna o usuário do token', () => {",
-              "    pm.expect(pm.response.json().data.email).to.eql(pm.collectionVariables.get('email'));",
-              "});"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Accept",
-            "value": "application/json"
-          }
-        ],
-        "url": {
-          "raw": "{{base_url}}/api/auth/me",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "auth",
-            "me"
-          ]
-        },
-        "description": "Retorna o usuário dono do token enviado no header `Authorization: Bearer {{token}}`."
-      },
-      "response": []
-    },
-    {
-      "name": "Logout",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Accept",
-            "value": "application/json"
-          }
-        ],
-        "url": {
-          "raw": "{{base_url}}/api/auth/logout",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "auth",
-            "logout"
-          ]
-        },
-        "description": "Revoga o token usado na requisição. Os outros tokens do usuário continuam válidos."
-      },
-      "response": []
-    },
-    {
-      "name": "Usuário autenticado após logout (401)",
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
-              "pm.test('Mensagem Unauthenticated', () => pm.expect(pm.response.json().message).to.eql('Unauthenticated.'));"
-            ]
-          }
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Accept",
-            "value": "application/json"
-          }
-        ],
-        "url": {
-          "raw": "{{base_url}}/api/auth/me",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "auth",
-            "me"
-          ]
-        },
-        "description": "O token revogado no logout não é mais aceito."
-      },
-      "response": []
-    },
     {
       "name": "Login",
       "event": [
@@ -199,8 +14,9 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Dario é super-admin', () => pm.expect(pm.response.json().data.roles).to.include('super-admin'));",
               "",
-              "if (pm.response.code < 300) {",
+              "if (pm.response.code === 200) {",
               "    const json = pm.response.json();",
               "    pm.test('Retorna um token Bearer', () => {",
               "        pm.expect(json.token).to.be.a('string').and.not.empty;",
@@ -237,7 +53,7 @@
             "login"
           ]
         },
-        "description": "Troca e-mail e senha por um novo token de acesso, salvo na variável **global** `token`.\n\n`device_name` é opcional (padrão `api`) e identifica o token.",
+        "description": "Troca e-mail e senha por um token de acesso, salvo na variável **global** `token` e usado pelas coleções Auth e Task.\n\nPor padrão entra como Dario (`super-admin`, acesso total). `device_name` é opcional (padrão `api`) e identifica o token.\n\nNão existe cadastro público: os usuários são criados pelo administrador (em desenvolvimento, por `php artisan db:seed`).",
         "auth": {
           "type": "noauth"
         },
@@ -249,6 +65,207 @@
               "language": "json"
             }
           }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Usuário autenticado",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Retorna o usuário do token com papéis e permissões', () => {",
+              "    const user = pm.response.json().data;",
+              "    pm.expect(user.email).to.eql(pm.collectionVariables.get('email'));",
+              "    pm.expect(user.roles).to.be.an('array');",
+              "    pm.expect(user.permissions).to.be.an('array').that.includes('tasks.view');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/auth/me",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        },
+        "description": "Retorna o usuário dono do token, com seus papéis (`roles`) e permissões efetivas (`permissions`)."
+      },
+      "response": []
+    },
+    {
+      "name": "Login como leitora (Maria)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Leitora só pode visualizar tarefas', () => {",
+              "    pm.expect(pm.response.json().data.permissions).to.eql(['tasks.view']);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    const json = pm.response.json();",
+              "    pm.test('Retorna um token Bearer', () => {",
+              "        pm.expect(json.token).to.be.a('string').and.not.empty;",
+              "        pm.expect(json.token_type).to.eql('Bearer');",
+              "    });",
+              "",
+              "    // Token da leitora, usado só nas requisições de exemplo de permissão",
+              "    pm.collectionVariables.set('reader_token', json.token);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Login de um usuário do papel `leitor`, que só tem a permissão `tasks.view`. O token é salvo na variável da coleção `reader_token`.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{reader_email}}\",\n  \"password\": \"{{password}}\",\n  \"device_name\": \"postman\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Logout (Maria)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/auth/logout",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "logout"
+          ]
+        },
+        "description": "Revoga o token usado na requisição (aqui, o da Maria). Os outros tokens continuam válidos, inclusive o do Dario, usado pela coleção Task.",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{reader_token}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Usuário autenticado após logout (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+              "pm.test('Mensagem Unauthenticated', () => pm.expect(pm.response.json().message).to.eql('Unauthenticated.'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/auth/me",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        },
+        "description": "O token revogado no logout não é mais aceito.",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{reader_token}}",
+              "type": "string"
+            }
+          ]
         }
       },
       "response": []
@@ -307,15 +324,14 @@
       "response": []
     },
     {
-      "name": "Registrar com e-mail já cadastrado (422)",
+      "name": "Cadastro público desativado (404)",
       "event": [
         {
           "listen": "test",
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test('HTTP 422', () => pm.response.to.have.status(422));",
-              "pm.test('Erro no campo email', () => pm.expect(pm.response.json().errors).to.have.property('email'));"
+              "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
             ]
           }
         }
@@ -343,13 +359,13 @@
             "register"
           ]
         },
-        "description": "Exemplo de erro de validação: o e-mail precisa ser único.",
+        "description": "Não existe cadastro público: só o administrador cria usuários.",
         "auth": {
           "type": "noauth"
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"name\": \"Usuário POC\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"password_confirmation\": \"{{password}}\"\n}",
+          "raw": "{\n  \"name\": \"Visitante\",\n  \"email\": \"visitante@example.com\",\n  \"password\": \"password\",\n  \"password_confirmation\": \"password\"\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -378,12 +394,22 @@
     },
     {
       "key": "email",
-      "value": "test@example.com",
+      "value": "dario@example.com",
       "type": "string"
     },
     {
       "key": "password",
       "value": "password",
+      "type": "string"
+    },
+    {
+      "key": "reader_email",
+      "value": "maria@example.com",
+      "type": "string"
+    },
+    {
+      "key": "reader_token",
+      "value": "",
       "type": "string"
     }
   ]

@@ -3,46 +3,24 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class AuthApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_user_can_register(): void
+    public function test_public_registration_is_disabled(): void
     {
         $this->postJson('/api/auth/register', [
             'name' => 'Maria',
             'email' => 'maria@example.com',
             'password' => 'password',
             'password_confirmation' => 'password',
-        ])
-            ->assertCreated()
-            ->assertJsonPath('data.name', 'Maria')
-            ->assertJsonPath('data.email', 'maria@example.com')
-            ->assertJsonPath('token_type', 'Bearer')
-            ->assertJsonStructure(['data' => ['id', 'name', 'email', 'email_verified_at', 'created_at', 'updated_at'], 'token'])
-            ->assertJsonMissingPath('data.password');
+        ])->assertNotFound();
 
-        $user = User::firstWhere('email', 'maria@example.com');
-
-        $this->assertTrue(Hash::check('password', $user->password));
-        $this->assertSame(['api'], $user->tokens()->pluck('name')->all());
-    }
-
-    public function test_register_validates_input(): void
-    {
-        User::factory()->create(['email' => 'maria@example.com']);
-
-        $this->postJson('/api/auth/register', [
-            'email' => 'maria@example.com',
-            'password' => 'password',
-            'password_confirmation' => 'outra-senha',
-        ])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['name', 'email', 'password']);
+        $this->assertDatabaseCount('users', 0);
     }
 
     public function test_user_can_login(): void
@@ -57,7 +35,8 @@ class AuthApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.id', $user->id)
             ->assertJsonPath('token_type', 'Bearer')
-            ->assertJsonStructure(['data', 'token']);
+            ->assertJsonStructure(['data' => ['id', 'name', 'email', 'roles', 'permissions'], 'token'])
+            ->assertJsonMissingPath('data.password');
 
         $this->assertSame(['iPhone da Maria'], $user->tokens()->pluck('name')->all());
     }
@@ -97,6 +76,27 @@ class AuthApiTest extends TestCase
             ->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('data.email', $user->email);
+    }
+
+    public function test_me_returns_roles_and_effective_permissions(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+
+        $reader = User::factory()->create()->assignRole('leitor');
+        $this->withToken($reader->createToken('api')->plainTextToken)
+            ->getJson('/api/auth/me')
+            ->assertOk()
+            ->assertJsonPath('data.roles', ['leitor'])
+            ->assertJsonPath('data.permissions', ['tasks.view']);
+
+        // O super-admin não tem permissões atribuídas, mas todas são efetivas para ele.
+        $admin = User::factory()->create()->assignRole(User::SUPER_ADMIN);
+        $this->app['auth']->forgetGuards();
+        $this->withToken($admin->createToken('api')->plainTextToken)
+            ->getJson('/api/auth/me')
+            ->assertOk()
+            ->assertJsonPath('data.roles', [User::SUPER_ADMIN])
+            ->assertJsonPath('data.permissions', ['tasks.create', 'tasks.delete', 'tasks.restore', 'tasks.update', 'tasks.view']);
     }
 
     public function test_requests_without_token_are_unauthorized(): void

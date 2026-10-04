@@ -5,9 +5,11 @@ namespace Tests\Feature;
 use App\Enums\TaskStatus;
 use App\Models\Task;
 use App\Models\User;
+use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class TaskApiTest extends TestCase
@@ -18,7 +20,11 @@ class TaskApiTest extends TestCase
     {
         parent::setUp();
 
-        Sanctum::actingAs(User::factory()->create());
+        $this->seed(RolePermissionSeeder::class);
+        $this->app->make(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        // "editor" tem todas as permissões de tarefas; as regras de autorização ficam em TaskAuthorizationTest.
+        Sanctum::actingAs(User::factory()->create()->assignRole('editor'));
     }
 
     #[DataProvider('taskRoutes')]

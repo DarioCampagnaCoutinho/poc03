@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "POC 03 - Task",
-    "description": "CRUD de tarefas da POC 03 (Laravel 13).\n\n**Autenticação:** todas as rotas exigem `Authorization: Bearer {{token}}`. Antes de usar esta coleção, execute \"Login\" ou \"Registrar usuário\" na coleção **POC 03 - Auth**: o token fica salvo na variável global `token`.\n\nVariáveis da coleção:\n- `base_url`: endereço da API (padrão `http://localhost:8000`)\n- `task_id`: preenchida automaticamente pela requisição \"Criar tarefa\"\n\nAs requisições estão na ordem de um fluxo completo e podem ser executadas em sequência pelo Collection Runner.",
+    "description": "CRUD de tarefas da POC 03 (Laravel 13).\n\n**Autenticação:** todas as rotas exigem `Authorization: Bearer {{token}}`. Antes de usar esta coleção, execute \"Login\" na coleção **POC 03 - Auth**: o token fica salvo na variável global `token`.\n\n**Autorização:** cada operação exige uma permissão (`tasks.view`, `tasks.create`, `tasks.update`, `tasks.delete`, `tasks.restore`). O Dario (`super-admin`) pode tudo. As últimas requisições mostram a Maria (`leitor`) listando tarefas (200) e sendo bloqueada ao criar (403).\n\nVariáveis da coleção:\n- `base_url`: endereço da API (padrão `http://localhost:8000`)\n- `task_id`: preenchida automaticamente pela requisição \"Criar tarefa\"\n- `reader_email` / `password`: usuária leitora (padrão Maria)\n- `reader_token`: preenchida por \"Login como leitora (Maria)\"\n\nAs requisições estão na ordem de um fluxo completo e podem ser executadas em sequência pelo Collection Runner.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -521,6 +521,176 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Login como leitora (Maria)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Leitora só pode visualizar tarefas', () => {",
+              "    pm.expect(pm.response.json().data.permissions).to.eql(['tasks.view']);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    const json = pm.response.json();",
+              "    pm.test('Retorna um token Bearer', () => {",
+              "        pm.expect(json.token).to.be.a('string').and.not.empty;",
+              "        pm.expect(json.token_type).to.eql('Bearer');",
+              "    });",
+              "",
+              "    // Token da leitora, usado só nas requisições de exemplo de permissão",
+              "    pm.collectionVariables.set('reader_token', json.token);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Login de um usuário do papel `leitor`, que só tem a permissão `tasks.view`. O token é salvo na variável da coleção `reader_token`.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{reader_email}}\",\n  \"password\": \"{{password}}\",\n  \"device_name\": \"postman\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Listar tarefas como leitora (200)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks"
+          ]
+        },
+        "description": "O papel `leitor` tem a permissão `tasks.view`: pode listar e consultar tarefas.",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{reader_token}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Criar tarefa como leitora (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+              "pm.test('Mensagem de acesso negado', () => pm.expect(pm.response.json().message).to.eql('This action is unauthorized.'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/tasks",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "tasks"
+          ]
+        },
+        "description": "O papel `leitor` não tem a permissão `tasks.create`: a API responde 403 Forbidden.",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{reader_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Tarefa da leitora\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
     }
   ],
   "auth": {
@@ -542,6 +712,21 @@
     {
       "key": "task_id",
       "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "reader_email",
+      "value": "maria@example.com",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "password",
+      "type": "string"
+    },
+    {
+      "key": "reader_token",
+      "value": "",
       "type": "string"
     }
   ]

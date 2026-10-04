@@ -11,10 +11,28 @@ use App\Models\Task;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Validation\Rule;
 
-class TaskController extends Controller
+class TaskController extends Controller implements HasMiddleware
 {
+    /**
+     * Permissão exigida por ação. O super-admin passa em todas (Gate::before).
+     *
+     * @return array<int, Middleware>
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:tasks.view', only: ['index', 'show']),
+            new Middleware('can:tasks.create', only: ['store']),
+            new Middleware('can:tasks.update', only: ['update']),
+            new Middleware('can:tasks.delete', only: ['destroy']),
+            new Middleware('can:tasks.restore', only: ['restore']),
+        ];
+    }
+
     /**
      * Lista as tarefas, paginadas e da mais recente para a mais antiga.
      * Filtro opcional por status; status=deleted lista as tarefas excluídas.
