@@ -96,7 +96,9 @@ class AuthApiTest extends TestCase
             ->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('data.roles', [User::SUPER_ADMIN])
-            ->assertJsonPath('data.permissions', ['tasks.create', 'tasks.delete', 'tasks.restore', 'tasks.update', 'tasks.view']);
+            ->assertJsonPath('data.permissions', [
+                'roles.manage', 'tasks.create', 'tasks.delete', 'tasks.restore', 'tasks.update', 'tasks.view', 'users.manage',
+            ]);
     }
 
     public function test_requests_without_token_are_unauthorized(): void

@@ -1,0 +1,839 @@
+{
+  "info": {
+    "name": "POC 03 - Admin",
+    "description": "Administração da POC 03: usuários, grupos (papéis) e permissões.\n\n**Acesso:** usuários exigem `users.manage`; grupos exigem `roles.manage`; a lista de permissões exige qualquer uma das duas. O Dario (`super-admin`) tem todas. Antes de usar, execute \"Login\" na coleção **POC 03 - Auth**.\n\n**Proteções:** só um super-admin dá o grupo `super-admin` ou mexe em usuários super-admin; o grupo `super-admin` não pode ser alterado nem excluído; ninguém exclui a própria conta nem tira de si o grupo `super-admin`.\n\nO fluxo cria um grupo e um usuário temporários e os exclui no final, então a coleção pode ser executada várias vezes pelo Collection Runner.\n\nVariáveis da coleção (preenchidas pelos scripts): `role_name`, `role_id`, `new_user_email`, `user_id`, `super_admin_role_id`, `reader_token`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Listar permissões",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Inclui as permissões de tarefas e de administração', () => {",
+              "    pm.expect(pm.response.json().data).to.include.members(['tasks.view', 'users.manage', 'roles.manage']);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/permissions",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "permissions"
+          ]
+        },
+        "description": "Lista as permissões existentes. Exige `users.manage` ou `roles.manage`."
+      },
+      "response": []
+    },
+    {
+      "name": "Listar grupos",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const roles = pm.response.json().data;",
+              "pm.test('Traz os grupos do seeder', () => {",
+              "    pm.expect(roles.map(r => r.name)).to.include.members(['super-admin', 'editor', 'leitor']);",
+              "});",
+              "",
+              "// Guarda o id do super-admin para o exemplo de grupo protegido",
+              "pm.collectionVariables.set('super_admin_role_id', roles.find(r => r.name === 'super-admin').id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/roles",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "roles"
+          ]
+        },
+        "description": "Lista os grupos (papéis) com suas permissões e o número de membros (`users_count`). Exige `roles.manage`."
+      },
+      "response": []
+    },
+    {
+      "name": "Criar grupo",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('role_name', `revisor-${Date.now()}`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) {",
+              "    const role = pm.response.json().data;",
+              "    pm.test('Grupo criado com as permissões', () => pm.expect(role.permissions).to.eql(['tasks.update', 'tasks.view']));",
+              "    pm.collectionVariables.set('role_id', role.id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/roles",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "roles"
+          ]
+        },
+        "description": "Cria um grupo com permissões. O nome usa letras minúsculas, números, `-` ou `_` (ex.: `revisor`, `equipe-financeira`).\n\nO script de pré-requisição gera um nome único (`revisor-<timestamp>`) para a coleção poder rodar várias vezes.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"{{role_name}}\",\n  \"permissions\": [\n    \"tasks.view\",\n    \"tasks.update\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Consultar grupo",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/roles/{{role_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "roles",
+            "{{role_id}}"
+          ]
+        },
+        "description": "Exibe um grupo."
+      },
+      "response": []
+    },
+    {
+      "name": "Atualizar grupo",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Grupo ganhou tasks.delete', () => pm.expect(pm.response.json().data.permissions).to.include('tasks.delete'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/roles/{{role_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "roles",
+            "{{role_id}}"
+          ]
+        },
+        "description": "Renomeia o grupo (`name`) e/ou define a lista **completa** de permissões dele (`permissions`). A mudança vale na hora para todos os membros.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"permissions\": [\n    \"tasks.view\",\n    \"tasks.update\",\n    \"tasks.delete\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Criar usuário",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('new_user_email', `usuario.${Date.now()}@example.com`);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) {",
+              "    const user = pm.response.json().data;",
+              "    pm.test('Usuário criado no grupo', () => pm.expect(user.roles).to.eql([pm.collectionVariables.get('role_name')]));",
+              "    pm.collectionVariables.set('user_id', user.id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/users",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "users"
+          ]
+        },
+        "description": "Cria um usuário já com grupos (`roles`) e, opcionalmente, permissões diretas (`permissions`). Exige `users.manage`.\n\nO script de pré-requisição gera um e-mail único.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Usuário POC\",\n  \"email\": \"{{new_user_email}}\",\n  \"password\": \"password\",\n  \"roles\": [\n    \"{{role_name}}\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Listar usuários do grupo",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Só o usuário criado está no grupo', () => pm.expect(pm.response.json().meta.total).to.eql(1));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/users?role={{role_name}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "users"
+          ],
+          "query": [
+            {
+              "key": "role",
+              "value": "{{role_name}}",
+              "description": "Nome do grupo"
+            }
+          ]
+        },
+        "description": "Lista os usuários (paginado). Filtro opcional por grupo com `role`."
+      },
+      "response": []
+    },
+    {
+      "name": "Consultar usuário",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/users/{{user_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "users",
+            "{{user_id}}"
+          ]
+        },
+        "description": "Exibe um usuário com grupos (`roles`), permissões efetivas (`permissions`) e permissões diretas (`direct_permissions`)."
+      },
+      "response": []
+    },
+    {
+      "name": "Atualizar usuário",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Nome alterado', () => pm.expect(pm.response.json().data.name).to.eql('Usuário POC (editado)'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/users/{{user_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "users",
+            "{{user_id}}"
+          ]
+        },
+        "description": "Atualiza nome, e-mail e/ou senha (apenas os campos enviados).",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Usuário POC (editado)\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Definir grupos do usuário",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Usuário agora é leitor', () => pm.expect(pm.response.json().data.roles).to.eql(['leitor']));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/users/{{user_id}}/roles",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "users",
+            "{{user_id}}",
+            "roles"
+          ]
+        },
+        "description": "Define a lista **completa** de grupos do usuário (`[]` remove todos). Só um super-admin pode dar o grupo `super-admin`.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"roles\": [\n    \"leitor\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Definir permissões diretas do usuário",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Permissões diretas e efetivas', () => {",
+              "    const user = pm.response.json().data;",
+              "    pm.expect(user.direct_permissions).to.eql(['tasks.create']);",
+              "    pm.expect(user.permissions).to.eql(['tasks.create', 'tasks.view']);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/users/{{user_id}}/permissions",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "users",
+            "{{user_id}}",
+            "permissions"
+          ]
+        },
+        "description": "Define a lista **completa** de permissões diretas do usuário (`[]` remove todas), somadas às dos grupos.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"permissions\": [\n    \"tasks.create\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Alterar o grupo super-admin (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+              "pm.test('Mensagem de grupo protegido', () => pm.expect(pm.response.json().message).to.eql('The super-admin role cannot be changed or deleted.'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/roles/{{super_admin_role_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "roles",
+            "{{super_admin_role_id}}"
+          ]
+        },
+        "description": "O grupo `super-admin` é protegido: não pode ser alterado nem excluído pela API.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"chefe\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Excluir usuário",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/users/{{user_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "users",
+            "{{user_id}}"
+          ]
+        },
+        "description": "Exclui o usuário e revoga os tokens dele. Ninguém pode excluir a própria conta."
+      },
+      "response": []
+    },
+    {
+      "name": "Excluir grupo",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/roles/{{role_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "roles",
+            "{{role_id}}"
+          ]
+        },
+        "description": "Exclui o grupo; os membros perdem as permissões que vinham dele."
+      },
+      "response": []
+    },
+    {
+      "name": "Login como leitora (Maria)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('Leitora só pode visualizar tarefas', () => {",
+              "    pm.expect(pm.response.json().data.permissions).to.eql(['tasks.view']);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "    const json = pm.response.json();",
+              "    pm.test('Retorna um token Bearer', () => {",
+              "        pm.expect(json.token).to.be.a('string').and.not.empty;",
+              "        pm.expect(json.token_type).to.eql('Bearer');",
+              "    });",
+              "",
+              "    // Token da leitora, usado só nas requisições de exemplo de permissão",
+              "    pm.collectionVariables.set('reader_token', json.token);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Login de um usuário do papel `leitor`, que só tem a permissão `tasks.view`. O token é salvo na variável da coleção `reader_token`.",
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{reader_email}}\",\n  \"password\": \"{{password}}\",\n  \"device_name\": \"postman\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Listar usuários como leitora (403)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/users",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "users"
+          ]
+        },
+        "description": "A Maria (`leitor`) não tem `users.manage`: a administração responde 403.",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{reader_token}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "role_name",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "role_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_user_email",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "super_admin_role_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reader_email",
+      "value": "maria@example.com",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "password",
+      "type": "string"
+    },
+    {
+      "key": "reader_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

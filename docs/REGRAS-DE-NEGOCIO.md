@@ -5,6 +5,7 @@
 | [RN01](#rn01--tarefas-compartilhadas-sem-dono) | Tarefas compartilhadas, sem dono |
 | [RN02](#rn02--login-obrigatório-e-permissão-por-operação) | Login obrigatório e permissão por operação |
 | [RN03](#rn03--só-o-administrador-cria-usuários) | Só o administrador cria usuários |
+| [RN04](#rn04--administração-de-usuários-e-grupos) | Administração de usuários e grupos, com proteções do super-admin |
 
 ---
 
@@ -115,8 +116,40 @@ sequenceDiagram
 
 > **Não existe cadastro público. Os usuários são criados pelo administrador, que também define seus grupos e permissões.**
 
-- Por enquanto, os usuários são criados pelo seeder (ambiente de desenvolvimento) ou pelo Tinker. Os endpoints de administração ficam para uma próxima etapa.
+- O administrador cria usuários pela API de administração (`POST /api/admin/users`, veja a [RN04](#rn04--administração-de-usuários-e-grupos)). Em desenvolvimento, o seeder cria o Dario, a Maria e a Ana.
 - A antiga rota `POST /api/auth/register` não existe mais (`404`).
+
+---
+
+## RN04 — Administração de usuários e grupos
+
+> **Administrar usuários exige `users.manage`; administrar grupos exige `roles.manage`. Ninguém, nem um administrador, consegue se promover a super-admin ou deixar o sistema sem super-admin.**
+
+### O que a administração permite
+
+| Permissão | Permite |
+|---|---|
+| `users.manage` | Listar, criar, alterar e excluir usuários; definir os grupos e as permissões diretas de cada um |
+| `roles.manage` | Listar, criar, renomear e excluir grupos; definir as permissões de cada grupo |
+| Qualquer uma das duas | Consultar a lista de permissões existentes |
+
+- O super-admin tem as duas permissões automaticamente.
+- Mudanças de acesso (grupos e permissões) valem na próxima requisição do usuário afetado, sem novo login.
+- Excluir um grupo tira dos membros as permissões que vinham dele. Excluir um usuário invalida os tokens dele.
+
+### Proteções
+
+| Regra | Vale também para o super-admin? |
+|---|---|
+| Só um super-admin dá o grupo `super-admin` a alguém | — (só ele pode) |
+| Só um super-admin altera, exclui ou muda os acessos de outro super-admin | — (só ele pode) |
+| O grupo `super-admin` não pode ser renomeado, alterado nem excluído | Sim |
+| Ninguém exclui a própria conta | Sim |
+| Ninguém tira de si mesmo o grupo `super-admin` | Sim |
+
+As três últimas regras garantem que sempre reste ao menos um super-admin. Toda tentativa bloqueada recebe `403`.
+
+> `users.manage` e `roles.manage` são permissões de confiança: quem tem `users.manage` pode, por exemplo, dar permissões a si mesmo, só não pode chegar a super-admin.
 
 ---
 
@@ -128,5 +161,7 @@ sequenceDiagram
 | RN02: login obrigatório | Middleware `auth:sanctum` nas rotas de tarefas ([`routes/api.php`](../routes/api.php)) |
 | RN02: permissão por operação | `TaskController::middleware()` exige `can:tasks.*` em cada ação; grupos e permissões criados pelo `RolePermissionSeeder` |
 | RN02: super-admin | `Gate::before` no `AppServiceProvider` |
-| RN03: sem cadastro público | Não há rota de cadastro; usuários criados pelo `UserSeeder` ou pelo Tinker |
-| Testes | `TaskApiTest` (401 em cada rota), `TaskAuthorizationTest` (403, leitor, permissão direta e super-admin), `AuthApiTest::test_public_registration_is_disabled` e `DatabaseSeederTest` |
+| RN03: sem cadastro público | Não há rota de cadastro; usuários criados pela API de administração (ou pelo `UserSeeder`, em desenvolvimento) |
+| RN04: permissões de administração | `UserController` e `RoleController` (em `Api/Admin`) exigem `can:users.manage` e `can:roles.manage`; `PermissionController` aceita qualquer uma das duas |
+| RN04: proteções do super-admin | `UserPolicy` (dar o grupo super-admin, mexer em super-admins) e verificações nos controllers (grupo super-admin, autoexclusão, autorrebaixamento) |
+| Testes | `TaskApiTest` (401 em cada rota), `TaskAuthorizationTest` (403, leitor, permissão direta e super-admin), `AuthApiTest::test_public_registration_is_disabled`, `DatabaseSeederTest`, `Admin\UserAdminTest` e `Admin\RoleAdminTest` |

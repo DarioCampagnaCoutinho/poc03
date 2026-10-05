@@ -109,6 +109,8 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 ├── compose.yaml                        # Serviços app, nginx e postgres
 ├── .dockerignore
 ├── api-rest/                           # Coleções do Postman
+│   ├── admin/
+│   │   └── admin.postman_collection.json
 │   ├── auth/
 │   │   └── auth.postman_collection.json
 │   ├── health/
@@ -129,19 +131,29 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 │   │   └── TaskStatus.php              # Enum de status da tarefa
 │   ├── Http/
 │   │   ├── Controllers/Api/
+│   │   │   ├── Admin/
+│   │   │   │   ├── PermissionController.php    # GET /api/admin/permissions
+│   │   │   │   ├── RoleController.php          # CRUD /api/admin/roles (grupos)
+│   │   │   │   └── UserController.php          # CRUD /api/admin/users + grupos e permissões do usuário
 │   │   │   ├── AuthController.php          # Login, logout e usuário autenticado
 │   │   │   ├── HealthCheckController.php   # GET /api/health (PHP, Nginx e PostgreSQL)
 │   │   │   └── TaskController.php          # CRUD /api/tasks + restore, com a permissão de cada ação
 │   │   ├── Requests/
+│   │   │   ├── Admin/                      # Validação da administração (usuários e grupos)
 │   │   │   ├── LoginRequest.php            # Validação do login
 │   │   │   ├── StoreTaskRequest.php        # Validação da criação de tarefa
 │   │   │   └── UpdateTaskRequest.php       # Validação da atualização de tarefa
 │   │   └── Resources/
+│   │       ├── RoleResource.php            # Formato JSON do grupo
 │   │       ├── TaskResource.php            # Formato JSON da tarefa
 │   │       └── UserResource.php            # Formato JSON do usuário
 │   ├── Models/
+│   │   ├── Permission.php              # Permissão da Spatie, fixada no guard "web"
+│   │   ├── Role.php                    # Grupo (papel) da Spatie, fixado no guard "web"
 │   │   ├── Task.php                    # Model Task (soft delete + sincronização de status)
 │   │   └── User.php                    # Model User (HasApiTokens do Sanctum + HasRoles da Spatie)
+│   ├── Policies/
+│   │   └── UserPolicy.php              # Proteções do super-admin na administração de usuários
 │   └── Providers/
 │       └── AppServiceProvider.php      # Gate::before: super-admin passa em todas as permissões
 ├── config/
@@ -158,6 +170,9 @@ Tarefas excluídas não aparecem nas consultas padrão; use `Task::withTrashed()
 ├── routes/
 │   └── api.php                         # Rotas da API (prefixo /api)
 └── tests/Feature/
+    ├── Admin/
+    │   ├── RoleAdminTest.php           # Testes da administração de grupos e da lista de permissões
+    │   └── UserAdminTest.php           # Testes da administração de usuários e das proteções
     ├── AuthApiTest.php                 # Testes das rotas de autenticação
     ├── DatabaseSeederTest.php          # Testes dos seeders (papéis, permissões e usuários)
     ├── HealthCheckTest.php             # Testes do health check
@@ -227,13 +242,26 @@ Todas as rotas da API ficam sob o prefixo `/api`.
 | `PUT/PATCH` | `/api/tasks/{id}` | Atualiza uma tarefa | Token + `tasks.update` |
 | `DELETE` | `/api/tasks/{id}` | Exclui uma tarefa (soft delete) | Token + `tasks.delete` |
 | `POST` | `/api/tasks/{id}/restore` | Restaura uma tarefa excluída | Token + `tasks.restore` |
+| `GET` | `/api/admin/users` | Lista os usuários (filtro opcional `?role=`) | Token + `users.manage` |
+| `POST` | `/api/admin/users` | Cria um usuário, com grupos e permissões | Token + `users.manage` |
+| `GET` | `/api/admin/users/{id}` | Exibe um usuário | Token + `users.manage` |
+| `PUT/PATCH` | `/api/admin/users/{id}` | Atualiza nome, e-mail ou senha | Token + `users.manage` |
+| `DELETE` | `/api/admin/users/{id}` | Exclui um usuário (e revoga os tokens dele) | Token + `users.manage` |
+| `PUT` | `/api/admin/users/{id}/roles` | Define os grupos do usuário | Token + `users.manage` |
+| `PUT` | `/api/admin/users/{id}/permissions` | Define as permissões diretas do usuário | Token + `users.manage` |
+| `GET` | `/api/admin/roles` | Lista os grupos, com permissões e nº de membros | Token + `roles.manage` |
+| `POST` | `/api/admin/roles` | Cria um grupo, com permissões | Token + `roles.manage` |
+| `GET` | `/api/admin/roles/{id}` | Exibe um grupo | Token + `roles.manage` |
+| `PUT/PATCH` | `/api/admin/roles/{id}` | Renomeia o grupo e/ou define as permissões dele | Token + `roles.manage` |
+| `DELETE` | `/api/admin/roles/{id}` | Exclui um grupo | Token + `roles.manage` |
+| `GET` | `/api/admin/permissions` | Lista as permissões existentes | Token + `users.manage` ou `roles.manage` |
 | `GET` | `/api/health` | Verifica PHP, Nginx e PostgreSQL | Público |
 | `GET` | `/up` | Health check padrão do Laravel | Público |
 | `GET` | `/nginx-health` | Health check do Nginx (não passa pelo PHP) | Público |
 
 - **Token** = header `Authorization: Bearer <token>`, obtido no login. Sem token (ou com um token revogado), a API responde `401 {"message": "Unauthenticated."}`.
-- **`tasks.*`** = permissão exigida (veja [Autorização](#autorização-papéis-e-permissões)). Logado, mas sem a permissão, a API responde `403 {"message": "This action is unauthorized."}`.
-- Não há cadastro público: os usuários são criados pelo administrador.
+- **`tasks.*`, `users.manage`, `roles.manage`** = permissão exigida (veja [Autorização](#autorização-papéis-e-permissões)). Logado, mas sem a permissão, a API responde `403 {"message": "This action is unauthorized."}`.
+- Não há cadastro público: os usuários são criados pelo administrador (veja [Administração](#administração-apiadmin)).
 
 ### Autenticação (`/api/auth`)
 
@@ -245,7 +273,7 @@ A autenticação usa os **tokens de API do Laravel Sanctum**: o cliente troca e-
 2. Enviar `Authorization: Bearer <token>` nas rotas protegidas.
 3. `POST /api/auth/logout` → revoga aquele token (os outros tokens do usuário continuam válidos).
 
-Não existe cadastro público: os usuários são criados pelo administrador. Por enquanto isso é feito pelo seeder ou pelo Tinker (veja [Autorização](#autorização-papéis-e-permissões)); os endpoints de administração ficam para uma próxima etapa.
+Não existe cadastro público: os usuários são criados pelo administrador, pela [API de administração](#administração-apiadmin).
 
 **Campos aceitos no login**
 
@@ -303,7 +331,7 @@ curl -X POST -H 'Accept: application/json' -H "Authorization: Bearer $TOKEN" htt
 
 ### Autorização (papéis e permissões)
 
-A autorização usa o pacote **spatie/laravel-permission**. Cada operação de tarefa exige uma **permissão**; as permissões são agrupadas em **papéis** (os "grupos").
+A autorização usa o pacote **spatie/laravel-permission**. Cada operação exige uma **permissão**; as permissões são agrupadas em **papéis** (os "grupos").
 
 **Permissões**
 
@@ -314,14 +342,18 @@ A autorização usa o pacote **spatie/laravel-permission**. Cada operação de t
 | `tasks.update` | Alterar título, descrição e status |
 | `tasks.delete` | Excluir (enviar para a lixeira) |
 | `tasks.restore` | Restaurar da lixeira |
+| `users.manage` | Administrar usuários: criar, alterar, excluir e definir grupos e permissões |
+| `roles.manage` | Administrar grupos: criar, renomear, excluir e definir permissões |
 
-**Papéis (grupos)**
+**Papéis (grupos) criados pelo seeder**
 
 | Papel | Permissões |
 |---|---|
 | `super-admin` | Todas, sem precisar atribuí-las (regra `Gate::before` no `AppServiceProvider`) |
 | `editor` | Todas as permissões de tarefas |
 | `leitor` | `tasks.view` |
+
+Novos grupos podem ser criados pela [API de administração](#administração-apiadmin).
 
 **Usuários de desenvolvimento** (criados por `php artisan db:seed`, senha `password`)
 
@@ -331,9 +363,66 @@ A autorização usa o pacote **spatie/laravel-permission**. Cada operação de t
 | Maria | `maria@example.com` | `leitor` | Fazer login e visualizar tarefas |
 | Ana | `ana@example.com` | `leitor` | Fazer login e visualizar tarefas |
 
-Qualquer usuário pode fazer login e consultar `/api/auth/me`; o que ele pode fazer com as tarefas depende das permissões. Um usuário pode ter vários papéis e também permissões atribuídas **diretamente**, além das que vêm dos papéis.
+Qualquer usuário pode fazer login e consultar `/api/auth/me`; o que ele pode fazer depende das permissões. Um usuário pode ter vários papéis e também permissões atribuídas **diretamente**, além das que vêm dos papéis. Mudanças de acesso valem na próxima requisição do usuário, sem precisar de um novo login.
 
-**Gerenciar acessos (por enquanto, pelo Tinker)**
+### Administração (`/api/admin`)
+
+Rotas para o administrador gerenciar usuários, grupos e permissões. O Dario (`super-admin`) tem acesso a todas; outros usuários precisam de `users.manage` e/ou `roles.manage`.
+
+Os exemplos abaixo usam a função `api` do [tutorial](docs/TUTORIAL.md#34-um-atalho-para-os-próximos-passos), logado como Dario.
+
+**Usuários** (exige `users.manage`)
+
+| Campo | Criação (`POST`) | Atualização (`PATCH`) | Regras |
+|---|---|---|---|
+| `name` | Obrigatório | Opcional | Até 255 caracteres |
+| `email` | Obrigatório | Opcional | E-mail válido, em minúsculas e único |
+| `password` | Obrigatório | Opcional | Mínimo de 8 caracteres |
+| `roles` | Opcional | — | Lista de grupos existentes |
+| `permissions` | Opcional | — | Lista de permissões existentes (diretas) |
+
+Grupos e permissões diretas de um usuário existente são definidos por rotas próprias, que recebem a **lista completa** (`[]` remove todos):
+
+```bash
+# Colocar o usuário 5 somente no grupo "editor"
+api PUT /admin/users/5/roles -d '{"roles": ["editor"]}'
+
+# Dar ao usuário 5 a permissão direta de criar tarefas (somada às dos grupos)
+api PUT /admin/users/5/permissions -d '{"permissions": ["tasks.create"]}'
+```
+
+A resposta de usuário traz `roles` (grupos), `permissions` (permissões efetivas: diretas + dos grupos) e `direct_permissions` (só as diretas).
+
+**Grupos** (exige `roles.manage`)
+
+| Campo | Regras |
+|---|---|
+| `name` | Obrigatório na criação; letras minúsculas, números, `-` ou `_`, até 50 caracteres, único. Ex.: `revisor`, `equipe-financeira` |
+| `permissions` | Lista **completa** de permissões do grupo (`[]` remove todas) |
+
+```bash
+# Criar o grupo "revisor"
+api POST /admin/roles -d '{"name": "revisor", "permissions": ["tasks.view", "tasks.update"]}'
+
+# Acrescentar tasks.delete ao grupo 4 (envie a lista completa)
+api PATCH /admin/roles/4 -d '{"permissions": ["tasks.view", "tasks.update", "tasks.delete"]}'
+```
+
+A resposta de grupo traz `permissions` e `users_count` (número de membros). Excluir um grupo tira dos membros as permissões que vinham dele.
+
+**Proteções**
+
+| Regra | Resposta |
+|---|---|
+| Só um super-admin dá o grupo `super-admin` a alguém | `403` |
+| Só um super-admin altera, exclui ou muda os acessos de outro super-admin | `403` |
+| O grupo `super-admin` não pode ser renomeado, alterado nem excluído | `403` |
+| Ninguém exclui a própria conta | `403` |
+| Ninguém tira de si mesmo o grupo `super-admin` (sempre resta um administrador) | `403` |
+
+> `users.manage` e `roles.manage` são permissões de confiança: quem tem `users.manage` pode, por exemplo, dar permissões a outros usuários (inclusive a si mesmo), só não pode chegar a super-admin.
+
+**Alternativa sem API (Tinker)**
 
 ```bash
 docker compose exec app php artisan tinker
@@ -341,18 +430,12 @@ docker compose exec app php artisan tinker
 
 ```php
 $ana = App\Models\User::firstWhere('email', 'ana@example.com');
-
-$ana->assignRole('editor');                 // coloca a Ana no grupo "editor"
-$ana->removeRole('leitor');                 // tira a Ana do grupo "leitor"
-$ana->givePermissionTo('tasks.create');     // permissão direta, sem mudar o grupo
-$ana->revokePermissionTo('tasks.create');   // remove a permissão direta
-
-// Criar um usuário (não há cadastro público)
-App\Models\User::create(['name' => 'João', 'email' => 'joao@example.com', 'password' => 'password'])
-    ->assignRole('leitor');
+$ana->syncRoles(['editor']);                  // define os grupos
+$ana->givePermissionTo('tasks.create');       // permissão direta
+App\Models\Role::create(['name' => 'revisor'])->givePermissionTo(['tasks.view', 'tasks.update']);
 ```
 
-As mudanças valem na próxima requisição do usuário, sem precisar de um novo login.
+Grupos criados pela API ou pelo Tinker ficam só no banco: se o banco for recriado, o seeder recria apenas `super-admin`, `editor` e `leitor`. Para um grupo existir sempre, inclua-o no `RolePermissionSeeder`.
 
 ### Tarefas (`/api/tasks`)
 
@@ -482,15 +565,16 @@ A pasta [`api-rest/`](api-rest/) traz as coleções prontas para importar no Pos
 
 | Coleção | Arquivo | Requisições |
 |---|---|---|
+| POC 03 - Admin | `api-rest/admin/admin.postman_collection.json` | Permissões, CRUD de grupos e de usuários, grupos e permissões do usuário, grupo protegido (403) e acesso da leitora (403) |
 | POC 03 - Auth | `api-rest/auth/auth.postman_collection.json` | Login (Dario e Maria), usuário autenticado com papéis e permissões, logout e exemplos de erro (401, 404 e 422) |
 | POC 03 - Health | `api-rest/health/health.postman_collection.json` | Health check de PHP, Nginx e PostgreSQL |
 | POC 03 - Task | `api-rest/task/task.postman_collection.json` | CRUD completo de tarefas, lixeira, restauração e exemplos de erro (401, 403 e 422) |
 
-**Importar:** no Postman, clique em **Import** e arraste a pasta `api-rest` (ou os três arquivos `.json`).
+**Importar:** no Postman, clique em **Import** e arraste a pasta `api-rest` (ou os quatro arquivos `.json`).
 
 **Antes de usar:** rode `docker compose exec app php artisan db:seed` para criar os usuários de desenvolvimento.
 
-**Autenticação no Postman:** execute **"Login"** da coleção *POC 03 - Auth* antes de usar a coleção *POC 03 - Task*. Por padrão ele entra como **Dario** (`super-admin`), que pode tudo. O token retornado é salvo na variável **global** `token` (visível em *Environments → Globals*) e enviado automaticamente como `Authorization: Bearer {{token}}` pelas coleções Auth e Task.
+**Autenticação no Postman:** execute **"Login"** da coleção *POC 03 - Auth* antes de usar as coleções *POC 03 - Task* e *POC 03 - Admin*. Por padrão ele entra como **Dario** (`super-admin`), que pode tudo. O token retornado é salvo na variável **global** `token` (visível em *Environments → Globals*) e enviado automaticamente como `Authorization: Bearer {{token}}` pelas coleções Auth e Task.
 
 As últimas requisições da coleção Task entram como **Maria** (`leitor`) e mostram a autorização funcionando: ela lista as tarefas (200), mas não consegue criar (403).
 
@@ -501,10 +585,11 @@ As últimas requisições da coleção Task entram como **Maria** (`leitor`) e m
 | `token` | Global | — | Preenchida por "Login" |
 | `base_url` | Cada coleção | `http://localhost:8000` | Endereço da API |
 | `email` | Auth | `dario@example.com` | Usuário do "Login" |
-| `password` | Auth e Task | `password` | Senha dos usuários de desenvolvimento |
-| `reader_email` | Auth e Task | `maria@example.com` | Usuária leitora dos exemplos de permissão |
-| `reader_token` | Auth e Task | — | Preenchida por "Login como leitora (Maria)" |
+| `password` | Auth, Task e Admin | `password` | Senha dos usuários de desenvolvimento |
+| `reader_email` | Auth, Task e Admin | `maria@example.com` | Usuária leitora dos exemplos de permissão |
+| `reader_token` | Auth, Task e Admin | — | Preenchida por "Login como leitora (Maria)" |
 | `task_id` | Task | `1` | Preenchida automaticamente pela requisição "Criar tarefa" |
+| `role_name`, `role_id`, `new_user_email`, `user_id`, `super_admin_role_id` | Admin | — | Preenchidas automaticamente pelos scripts da coleção |
 
 Para testar com outro usuário, troque o `email` na aba *Variables* da coleção Auth e rode "Login" de novo.
 
@@ -515,10 +600,11 @@ newman() { docker run --rm --network poc03_default -v "$PWD/api-rest":/etc/newma
 
 newman auth/auth.postman_collection.json --export-globals globals.json
 newman task/task.postman_collection.json --globals globals.json
+newman admin/admin.postman_collection.json --globals globals.json
 rm api-rest/globals.json
 ```
 
-> Executar a coleção Task cria uma tarefa no banco de desenvolvimento.
+> Executar a coleção Task cria uma tarefa no banco de desenvolvimento. A coleção Admin cria um grupo e um usuário temporários e os exclui no final.
 
 ---
 
@@ -641,9 +727,18 @@ docker compose exec app bash
 - [x] Testes de autorização (`TaskAuthorizationTest`) e dos seeders (`DatabaseSeederTest`)
 - [x] Coleções do Postman atualizadas (login do Dario, exemplos com a Maria) e validadas com o Newman
 
+### Etapa 11 — API de administração ✅
+
+- [x] Permissões `users.manage` e `roles.manage`
+- [x] `/api/admin/users`: CRUD de usuários e rotas para definir os grupos e as permissões diretas de cada um
+- [x] `/api/admin/roles`: CRUD de grupos com suas permissões e número de membros
+- [x] `/api/admin/permissions`: lista das permissões existentes
+- [x] `UserPolicy` e regras nos controllers: só super-admin dá o papel super-admin ou mexe em super-admins; grupo super-admin protegido; ninguém exclui a própria conta nem tira de si o super-admin
+- [x] Models `Role` e `Permission` próprios, fixados no guard `web` (correção para o guard `sanctum` das rotas autenticadas)
+- [x] Testes em `tests/Feature/Admin/` e coleção do Postman `admin`, validados contra a API
+
 ### Pendências conhecidas
 
-- Endpoints de administração (criar usuários, gerenciar papéis e permissões) ainda não existem; por enquanto isso é feito pelo seeder ou pelo Tinker.
 - Os tokens não expiram (`expiration` = `null` em `config/sanctum.php`, padrão do Sanctum); só deixam de valer no logout.
 - A fila usa o driver `database`, mas ainda não há um container de worker (`queue:work`).
 - As mensagens de validação estão em inglês (`APP_LOCALE=en`).
@@ -667,6 +762,10 @@ docker compose exec app bash
 - **Permissões checadas no controller:** o `TaskController` declara, via `HasMiddleware`, a permissão de cada ação. As rotas continuam com `Route::apiResource`, e o mapeamento ação → permissão fica num lugar só.
 - **403 x 401:** `401` significa "não sei quem você é" (sem token ou token inválido); `403` significa "sei quem você é, mas você não tem permissão".
 - **Seeder sem `WithoutModelEvents`:** a Spatie usa os eventos dos models para limpar o cache de permissões; com os eventos desligados, o cache poderia ficar desatualizado durante o seed.
+- **`Role` e `Permission` fixados no guard `web`:** o middleware `auth:sanctum` muda o guard padrão da requisição para `sanctum`, que não tem provider. Sem um guard fixo, grupos criados ou buscados pela API iriam para o guard `sanctum`, diferente do das permissões e dos usuários (`web`). Os models próprios `App\Models\Role` e `App\Models\Permission` (registrados em `config/permission.php`) declaram `$guard_name = 'web'`.
+- **Duas permissões de administração, e não uma por operação:** administrar usuários e grupos é uma função de confiança, e permissões muito granulares aqui abririam brechas de escalada de privilégio. As regras sensíveis (papel super-admin, autoexclusão) ficam na `UserPolicy` e nos controllers.
+- **`UserPolicy` + `Gate::before`:** as regras da Policy só se aplicam a quem não é super-admin, porque o `Gate::before` libera o super-admin antes. Por isso as regras que valem até para o super-admin (não excluir a própria conta, não tirar de si o super-admin, não alterar o grupo super-admin) ficam nos controllers.
+- **Listas completas em grupos e permissões:** `PUT .../roles`, `PUT .../permissions` e o `permissions` do grupo recebem a lista inteira (sincronização), em vez de rotas separadas para adicionar e remover. O estado final fica explícito em cada requisição.
 
 ---
 

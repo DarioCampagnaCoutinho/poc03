@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class DatabaseSeederTest extends TestCase
@@ -46,6 +46,6 @@ class DatabaseSeederTest extends TestCase
 
         $this->assertSame(3, User::count());
         $this->assertSame(3, Role::count());
-        $this->assertSame(5, Permission::count());
+        $this->assertSame(7, Permission::count());
     }
 }

@@ -12,11 +12,12 @@ Tempo estimado: 15 minutos.
 2. [Subir o ambiente](#2-subir-o-ambiente)
 3. [Fazer login](#3-fazer-login)
 4. [Trabalhar com tarefas](#4-trabalhar-com-tarefas)
-5. [Sair (logout)](#5-sair-logout)
-6. [Usando o Postman](#6-usando-o-postman)
-7. [Quando algo dá errado](#7-quando-algo-dá-errado)
-8. [Desligar e reiniciar do zero](#8-desligar-e-reiniciar-do-zero)
-9. [Referência rápida](#9-referência-rápida)
+5. [Administrar usuários e grupos](#5-administrar-usuários-e-grupos)
+6. [Sair (logout)](#6-sair-logout)
+7. [Usando o Postman](#7-usando-o-postman)
+8. [Quando algo dá errado](#8-quando-algo-dá-errado)
+9. [Desligar e reiniciar do zero](#9-desligar-e-reiniciar-do-zero)
+10. [Referência rápida](#10-referência-rápida)
 
 ---
 
@@ -38,7 +39,7 @@ Login (recebe um token)  ──►  Usar as tarefas com o token  ──►  Logo
 ```
 
 - O **token** é a sua "chave de acesso": todas as rotas de tarefas exigem que ele seja enviado no header `Authorization: Bearer <token>`.
-- Não existe cadastro: os usuários são criados pelo **administrador**, que também define o que cada um pode fazer (as **permissões**). Por exemplo, um usuário pode só visualizar as tarefas, enquanto outro pode criar, alterar e excluir.
+- Não existe cadastro: os usuários são criados pelo **administrador**, que também define o que cada um pode fazer (as **permissões**), individualmente ou por **grupos**. Por exemplo, um usuário pode só visualizar as tarefas, enquanto outro pode criar, alterar e excluir. A [seção 5](#5-administrar-usuários-e-grupos) mostra como.
 - As tarefas são **compartilhadas**: quem tem a permissão de uma operação pode realizá-la em qualquer tarefa, inclusive nas criadas por outras pessoas.
 
 Os diagramas dessas regras estão em [Regras de negócio](REGRAS-DE-NEGOCIO.md).
@@ -104,7 +105,7 @@ curl http://localhost:8000/api/health
 {"status":"ok","services":{"php":"ok","nginx":"ok","postgresql":"ok"}}
 ```
 
-Se algum serviço aparecer como `"error"`, veja a seção [Quando algo dá errado](#7-quando-algo-dá-errado).
+Se algum serviço aparecer como `"error"`, veja a seção [Quando algo dá errado](#8-quando-algo-dá-errado).
 
 ---
 
@@ -414,11 +415,122 @@ Para voltar a usar o Dario:
 TOKEN=$TOKEN_DARIO
 ```
 
-> Quem define as permissões é o administrador. Por enquanto isso é feito pelo Tinker; os comandos estão na seção [Autorização do README](../README.md#autorização-papéis-e-permissões).
+> Quem define as permissões é o administrador; a próxima seção mostra como.
 
 ---
 
-## 5. Sair (logout)
+## 5. Administrar usuários e grupos
+
+Esta seção é para o **administrador**. O Dario (`super-admin`) pode tudo; outros usuários só administram se tiverem as permissões `users.manage` (usuários) e/ou `roles.manage` (grupos).
+
+Confira se a variável `TOKEN` é a do Dario. Se você fez o passo 4.8, volte com `TOKEN=$TOKEN_DARIO`.
+
+### 5.1 Ver as permissões e os grupos
+
+```bash
+api GET /admin/permissions
+```
+
+```
+{"data":["roles.manage","tasks.create","tasks.delete","tasks.restore","tasks.update","tasks.view","users.manage"]}
+HTTP 200
+```
+
+```bash
+api GET /admin/roles
+```
+
+Cada grupo vem com as permissões (`permissions`) e o número de membros (`users_count`). O `leitor`, por exemplo:
+
+```json
+{"id": 3, "name": "leitor", "permissions": ["tasks.view"], "users_count": 2, ...}
+```
+
+### 5.2 Criar um grupo
+
+O nome usa letras minúsculas, números, `-` ou `_`:
+
+```bash
+api POST /admin/roles -d '{"name": "revisor", "permissions": ["tasks.view", "tasks.update"]}'
+```
+
+```
+{"data":{"id":4,"name":"revisor","permissions":["tasks.update","tasks.view"],"users_count":0,...}}
+HTTP 201
+```
+
+Anote o `id` do grupo; nos exemplos abaixo ele é `4`.
+
+### 5.3 Criar um usuário
+
+O usuário já pode nascer em um ou mais grupos:
+
+```bash
+api POST /admin/users -d '{"name": "João", "email": "joao@example.com", "password": "senha-do-joao", "roles": ["revisor"]}'
+```
+
+```json
+{"data":{"id":4,"name":"João","email":"joao@example.com","roles":["revisor"],"permissions":["tasks.update","tasks.view"],"direct_permissions":[],...}}
+HTTP 201
+```
+
+- `roles`: grupos do usuário.
+- `permissions`: tudo o que ele pode fazer (permissões dos grupos + diretas).
+- `direct_permissions`: permissões dadas diretamente a ele.
+
+Agora o João já consegue fazer login com `joao@example.com` / `senha-do-joao`. Nos exemplos abaixo, o `id` dele é `4`.
+
+### 5.4 Ajustar os acessos
+
+As rotas de grupos e permissões recebem a **lista completa**: o que não estiver na lista é removido.
+
+```bash
+# Colocar o João somente no grupo "editor"
+api PUT /admin/users/4/roles -d '{"roles": ["editor"]}'
+
+# Dar ao João uma permissão direta, sem mudar os grupos dele
+api PUT /admin/users/4/permissions -d '{"permissions": ["tasks.create"]}'
+
+# Mudar as permissões de um grupo (vale para todos os membros)
+api PATCH /admin/roles/4 -d '{"permissions": ["tasks.view", "tasks.update", "tasks.delete"]}'
+
+# Ver quem está em um grupo
+api GET '/admin/users?role=editor'
+```
+
+As mudanças valem na hora: o João não precisa fazer login de novo.
+
+Para alterar nome, e-mail ou senha:
+
+```bash
+api PATCH /admin/users/4 -d '{"password": "nova-senha-123"}'
+```
+
+### 5.5 Excluir
+
+```bash
+api DELETE /admin/users/4    # exclui o usuário e invalida os tokens dele
+api DELETE /admin/roles/4    # exclui o grupo; os membros perdem as permissões que vinham dele
+```
+
+```
+HTTP 204
+```
+
+### Proteções
+
+Algumas operações são bloqueadas (`403`) para evitar que o sistema fique sem administrador ou que alguém se promova:
+
+| Tentativa | Mensagem |
+|---|---|
+| Excluir a própria conta | `You cannot delete your own account.` |
+| Tirar de si mesmo o grupo `super-admin` | `You cannot remove your own super-admin role.` |
+| Alterar ou excluir o grupo `super-admin` | `The super-admin role cannot be changed or deleted.` |
+| Dar o grupo `super-admin`, ou mexer em um super-admin, sem ser super-admin | `This action is unauthorized.` |
+
+---
+
+## 6. Sair (logout)
 
 O logout invalida o token usado na requisição:
 
@@ -445,7 +557,7 @@ Para continuar usando a API, faça login de novo ([passo 3.2](#32-fazer-login-e-
 
 ---
 
-## 6. Usando o Postman
+## 7. Usando o Postman
 
 A pasta `api-rest/` traz coleções prontas com todas as requisições deste tutorial.
 
@@ -453,7 +565,7 @@ A pasta `api-rest/` traz coleções prontas com todas as requisições deste tut
 
 1. Abra o Postman e clique em **Import**.
 2. Arraste a pasta `api-rest` do projeto.
-3. Três coleções aparecem: **POC 03 - Auth**, **POC 03 - Health** e **POC 03 - Task**.
+3. Quatro coleções aparecem: **POC 03 - Admin**, **POC 03 - Auth**, **POC 03 - Health** e **POC 03 - Task**.
 
 ### Usar
 
@@ -463,6 +575,7 @@ A pasta `api-rest/` traz coleções prontas com todas as requisições deste tut
 3. Em **POC 03 - Task**, envie as requisições na ordem em que aparecem: criar, listar, consultar, atualizar, excluir, ver a lixeira e restaurar.
    A requisição **Criar tarefa** guarda o id da tarefa criada, e as seguintes usam esse id sozinhas.
 4. As últimas requisições da coleção Task entram como Maria (`leitor`): ela consegue listar (200), mas não consegue criar (403).
+5. Em **POC 03 - Admin**, envie as requisições na ordem: elas listam permissões e grupos, criam um grupo e um usuário temporários, ajustam os acessos e excluem os dois no final.
 
 Para entrar com outro usuário, troque a variável `email` na aba **Variables** da coleção Auth e envie **Login** de novo.
 
@@ -474,13 +587,14 @@ Para mudar o endereço da API (por exemplo, outra porta), edite a variável `bas
 
 ---
 
-## 7. Quando algo dá errado
+## 8. Quando algo dá errado
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
 | `curl: (7) Failed to connect to localhost port 8000` | Containers parados ou Docker fechado | Abra o Docker Desktop e rode `docker compose up -d` |
 | `HTTP 401` com `"Unauthenticated."` | Token ausente, digitado errado ou já invalidado pelo logout | Faça login de novo e atualize a variável `TOKEN` |
 | `HTTP 403` com `"This action is unauthorized."` | Seu usuário não tem a permissão dessa operação | Confira suas permissões com `api GET /auth/me` e peça ao administrador |
+| `HTTP 403` em `/admin/...` com outra mensagem | Uma das [proteções da administração](#proteções) | Leia a mensagem: ela diz qual regra impediu a operação |
 | `HTTP 404` em `/tasks/{id}` | A tarefa não existe ou está na lixeira | Confira o id com `api GET /tasks` ou `api GET '/tasks?status=deleted'` |
 | `HTTP 422` | Dados inválidos | Leia o bloco `errors` da resposta: ele indica o campo e o problema (tabela abaixo) |
 | `HTTP 422` no login com `"These credentials do not match our records."` | E-mail ou senha errados, ou o usuário não existe | Confira os dados; se o banco foi recriado, rode `docker compose exec app php artisan db:seed` |
@@ -502,7 +616,7 @@ As mensagens da API estão em inglês. As mais comuns:
 
 ---
 
-## 8. Desligar e reiniciar do zero
+## 9. Desligar e reiniciar do zero
 
 Parar os containers (os dados continuam salvos):
 
@@ -521,7 +635,7 @@ docker compose exec app php artisan db:seed
 
 ---
 
-## 9. Referência rápida
+## 10. Referência rápida
 
 ```bash
 # Ambiente
@@ -546,6 +660,15 @@ api PATCH  /tasks/1 -d '{"status": "completed"}'   # atualizar
 api DELETE /tasks/1                                # excluir (vai para a lixeira)
 api GET    '/tasks?status=deleted'                 # ver a lixeira
 api POST   /tasks/1/restore                        # restaurar
+
+# Administração (Dario ou quem tiver users.manage / roles.manage)
+api GET    /admin/permissions                                          # permissões existentes
+api GET    /admin/roles                                                # grupos
+api POST   /admin/roles -d '{"name": "revisor", "permissions": ["tasks.view"]}'   # criar grupo
+api POST   /admin/users -d '{"name": "João", "email": "joao@example.com", "password": "senha-do-joao", "roles": ["revisor"]}'
+api PUT    /admin/users/4/roles -d '{"roles": ["editor"]}'            # grupos do usuário
+api PUT    /admin/users/4/permissions -d '{"permissions": ["tasks.create"]}'   # permissões diretas
+api DELETE /admin/users/4                                              # excluir usuário
 
 # Sair
 api POST /auth/logout

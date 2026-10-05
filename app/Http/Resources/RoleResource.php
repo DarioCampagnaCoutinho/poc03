@@ -2,14 +2,16 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin User
+ * @mixin Role
  */
-class UserResource extends JsonResource
+class RoleResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -18,14 +20,14 @@ class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // O super-admin não tem permissões atribuídas, mas libera todas (Gate::before).
+        $permissions = $this->name === User::SUPER_ADMIN ? Permission::all() : $this->permissions;
+
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'email' => $this->email,
-            'email_verified_at' => $this->email_verified_at,
-            'roles' => $this->getRoleNames(),
-            'permissions' => $this->allPermissionNames(),
-            'direct_permissions' => $this->getPermissionNames()->sort()->values(),
+            'permissions' => $permissions->pluck('name')->sort()->values(),
+            'users_count' => $this->whenCounted('users'),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
